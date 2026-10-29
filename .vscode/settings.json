@@ -1,0 +1,6 @@
+{
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "java.search.scope": "all",
+    "java.compile.nullAnalysis.mode": "automatic",
+    "cmake.sourceDirectory": "/Users/naungnaungzaw/Developer/karma/linux"
+}

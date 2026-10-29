@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "386912084170",
+    "project_id": "karmaapp-84aca",
+    "storage_bucket": "karmaapp-84aca.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:386912084170:android:f7b7ab838fe51179d1d433",
+        "android_client_info": {
+          "package_name": "com.naungnaungzaw.karma"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "386912084170-9caogh24bihoq9fj2bv822d0jbpebesl.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.naungnaungzaw.karma",
+            "certificate_hash": "416c47051a861e58faa662313ebb7e118608956d"
+          }
+        },
+        {
+          "client_id": "386912084170-i8gscrc8jrbm4iq92te39aj98i7ngfu4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDNCKtHSXUglOrO4Cp7tjNTBcdK46iY-7w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "386912084170-i8gscrc8jrbm4iq92te39aj98i7ngfu4.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "386912084170-b05hi1qc7uchbfjctiljdqjtqe808qn7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.buddhismCharity"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

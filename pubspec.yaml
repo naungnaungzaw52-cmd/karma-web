@@ -1,0 +1,76 @@
+name: karma
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.5.0+9
+
+environment:
+  sdk: '>=3.2.6 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^3.1.0
+  cloud_firestore: ^5.1.0
+  firebase_auth: ^5.1.0
+  firebase_messaging: ^15.0.0
+  image_picker: 1.0.7
+  firebase_storage: ^12.1.0
+  badges: ^3.2.0
+  google_sign_in: ^6.2.1
+  googleapis_auth: ^1.6.0
+  http: 1.1.0 
+  youtube_player_flutter: ^8.1.2
+  flutter_inappwebview: ^5.8.0
+  webview_flutter: ^4.8.0
+  url_launcher: ^6.2.5
+  flutter_webrtc: ^0.10.0
+  flutter_callkit_incoming: ^2.0.4
+  flutter_local_notifications: ^17.0.0
+  permission_handler: ^11.3.1
+  google_mobile_ads: ^5.2.0
+  flutter_tts: ^3.8.5
+  speech_to_text: ^6.6.2
+  flutter_dotenv: ^5.1.0
+  crypto: ^3.0.3
+  file_picker: ^8.0.5
+  video_compress: ^3.1.2
+  image_painter: ^0.7.1
+  webview_flutter_android: ^3.16.3
+  path_provider: ^2.1.4
+  flutter_linkify: ^6.0.0
+  intl: ^0.20.2
+  provider: ^6.1.2
+  shared_preferences: ^2.2.3
+  video_thumbnail: ^0.5.6
+  firebase_app_check: ^0.3.0
+  audioplayers: ^6.0.0
+  visibility_detector: ^0.4.0+2
+  http_parser: ^4.0.2
+  universal_html: ^2.2.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+  flutter_launcher_icons: "^0.13.1"
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+
+flutter:
+  uses-material-design: true
+  generate: true
+  assets:
+    - assets/clouds.png
+    - assets/icon/app_icon.png
+  
+
+# 👈 dependency_overrides ကို ဒီလို အောက်ဆုံးမှာ (Indentation အမှန်နဲ့) တသီးတခြား ထည့်ရပါမယ်
+dependency_overrides:
+  flutter_vibrate: ^1.4.0
+  http: 1.1.0
+  meta: 1.11.0
