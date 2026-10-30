@@ -3943,13 +3943,18 @@ class _CreatePostPageState extends State<CreatePostPage> {
       }
 
       // 3. သီချင်း (Audio) Upload တင်ခြင်း
+      // 3. သီချင်း (Audio) Upload တင်ခြင်း
       if (_selectedAudio != null) {
         if (_isCancelled) return;
+
+        // 🌟 Web ဖြစ်စေ Mobile ဖြစ်စေ File object ကို R2Service သို့ ပို့၍ Upload တင်ခြင်း
         String? uploadedAudioUrl =
             await R2Service.uploadFile(_selectedAudio!, 'posts_audio');
+
         if (uploadedAudioUrl != null) {
           audioUrl = uploadedAudioUrl;
         }
+
         currentIndex++;
         if (dialogStateSetter != null) {
           dialogStateSetter!(() {
@@ -3958,7 +3963,6 @@ class _CreatePostPageState extends State<CreatePostPage> {
           });
         }
       }
-
       String uid = FirebaseAuth.instance.currentUser!.uid;
       User? currentUser = FirebaseAuth.instance.currentUser;
       String userName =
@@ -4925,33 +4929,36 @@ class _EditPostPageState extends State<EditPostPage> {
         if (_isCancelled) return;
         File fileToUpload = _selectedVideoFile!;
 
-        var subscription =
-            VideoCompress.compressProgress$.subscribe((progress) {
-          if (dialogStateSetter != null) {
-            dialogStateSetter!(() {
-              double percent = progress > 1 ? progress / 100 : progress;
-              _progressText = isMm
-                  ? "ဗီဒီယို ပြင်ဆင်နေပါသည်... ${(percent * 100).toStringAsFixed(0)}%"
-                  : "Compressing video... ${(percent * 100).toStringAsFixed(0)}%";
-            });
+        // 🌟 Web မဟုတ်မှသာ (Mobile ဖြစ်မှသာ) Video Compress လုပ်ရန်
+        if (!kIsWeb) {
+          var subscription =
+              VideoCompress.compressProgress$.subscribe((progress) {
+            if (dialogStateSetter != null) {
+              dialogStateSetter!(() {
+                double percent = progress > 1 ? progress / 100 : progress;
+                _progressText = isMm
+                    ? "ဗီဒီယို ပြင်ဆင်နေပါသည်... ${(percent * 100).toStringAsFixed(0)}%"
+                    : "Compressing video... ${(percent * 100).toStringAsFixed(0)}%";
+              });
+            }
+          });
+
+          try {
+            final compressedVideo = await VideoCompress.compressVideo(
+              _selectedVideoFile!.path,
+              quality: VideoQuality.MediumQuality,
+              deleteOrigin: false,
+            );
+
+            subscription.unsubscribe();
+
+            if (compressedVideo != null && compressedVideo.file != null) {
+              fileToUpload = compressedVideo.file!;
+            }
+          } catch (e) {
+            subscription.unsubscribe();
+            print("Video Compression Error: $e");
           }
-        });
-
-        try {
-          final compressedVideo = await VideoCompress.compressVideo(
-            _selectedVideoFile!.path,
-            quality: VideoQuality.MediumQuality,
-            deleteOrigin: false,
-          );
-
-          subscription.unsubscribe();
-
-          if (compressedVideo != null && compressedVideo.file != null) {
-            fileToUpload = compressedVideo.file!;
-          }
-        } catch (e) {
-          subscription.unsubscribe();
-          print("Video Compression Error: $e");
         }
 
         if (_isCancelled) return;
@@ -4983,7 +4990,6 @@ class _EditPostPageState extends State<EditPostPage> {
         }
         await Future.delayed(const Duration(milliseconds: 50));
       }
-
       final RegExp hashtagRegExp = RegExp(r'\B#\w+[\w_-]*');
       List<String> updatedHashtags = hashtagRegExp
           .allMatches(_textController.text)
