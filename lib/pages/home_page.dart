@@ -4144,7 +4144,10 @@ class _CreatePostPageState extends State<CreatePostPage> {
               const SizedBox(height: 16),
               TextField(
                 controller: _textController,
-                maxLines: 4,
+                maxLines:
+                    null, // 👈 စာကြောင်း မည်မျှပင်ရှည်စေကာမူ အလိုအလျောက် အောက်ဆင်းပေးမည်
+                keyboardType: TextInputType
+                    .multiline, // 👈 စာပိုဒ်လိုက်၊ လိုင်းများစွာဖြင့် ကူးထည့်ရန် ခွင့်ပြုမည်
                 style: TextStyle(color: textColor),
                 decoration: InputDecoration(
                   hintText: isMyanmarNotifier.value
@@ -5155,7 +5158,9 @@ class _EditPostPageState extends State<EditPostPage> {
                 builder: (context, isMm, child) {
                   return TextField(
                     controller: _textController,
-                    maxLines: 4,
+                    maxLines:
+                        null, // 👈 စာကြောင်း မည်မျှပင်ရှည်စေကာမူ အလိုအလျောက် အောက်ဆင်းပေးမည်
+                    keyboardType: TextInputType.multiline,
                     style: TextStyle(color: textColor),
                     decoration: InputDecoration(
                       hintText: isMm
