@@ -4358,8 +4358,8 @@ class _CreatePostPageState extends State<CreatePostPage> {
                             const SizedBox(height: 8),
                             Text(
                               isMyanmarNotifier.value
-                                  ? "ပုံ၊ ဗီဒီယို (၁မိနစ်စာ) သို့မဟုတ် သီချင်း ထည့်ရန်"
-                                  : "Add Photo, Video (Max 1 Min) or Audio",
+                                  ? "ပုံ၊ ဗီဒီယို (၃မိနစ်စာ) သို့မဟုတ် သီချင်း ထည့်ရန်"
+                                  : "Add Photo, Video (Max 3 Min) or Audio",
                               style: TextStyle(
                                   color: isDark ? Colors.white70 : Colors.grey),
                               textAlign: TextAlign.center,
