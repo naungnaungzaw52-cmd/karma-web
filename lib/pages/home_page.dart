@@ -3622,15 +3622,15 @@ class _CreatePostPageState extends State<CreatePostPage> {
       if (isVideo) {
         try {
           MediaInfo? mediaInfo = await VideoCompress.getMediaInfo(file.path);
-          // 🌟 ၁ မိနစ် (60,000 milliseconds) ထက် ကျော်လွန်ပါက တားမြစ်မည်
-          if (mediaInfo.duration != null && mediaInfo.duration! > 60000) {
+          // 🌟 ၃ မိနစ် (180,000 milliseconds) ထက် ကျော်လွန်ပါက တားမြစ်မည်
+          if (mediaInfo.duration != null && mediaInfo.duration! > 180000) {
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
                   isMm
-                      ? "ဗီဒီယိုသည် ၁ မိနစ် (စက္ကန့် ၆၀) ထက် မကျော်ရပါ။"
-                      : "Video must not exceed 1 minute (60 seconds).",
+                      ? "ဗီဒီယိုသည် ၃ မိနစ် (စက္ကန့် ၁၈၀) ထက် မကျော်ရပါ။"
+                      : "Video must not exceed 3 minutes (180 seconds).",
                 ),
               ),
             );
@@ -3736,8 +3736,8 @@ class _CreatePostPageState extends State<CreatePostPage> {
                             color: Colors.orange),
                         title: Text(
                           isMm
-                              ? "ဂယ်လီယာမှ ဗီဒီယိုရွေးမည် (၁ မိနစ်စာ)"
-                              : "Pick Video (Max 1 Min)",
+                              ? "ဂယ်လီယာမှ ဗီဒီယိုရွေးမည် (၃ မိနစ်စာ)"
+                              : "Pick Video (Max 3 Min)",
                           style: const TextStyle(color: Colors.white),
                         ),
                         onTap: () {
