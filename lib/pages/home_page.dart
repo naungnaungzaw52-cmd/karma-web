@@ -2,13 +2,15 @@
 
 import 'dart:io';
 import 'dart:ui';
+import 'dart:ui_web' as ui_web;
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:karma/main.dart';
 import 'package:provider/provider.dart'; // 🌟 ThemeProvider အတွက် Provider ထည့်သွင်းခြင်း
@@ -3045,6 +3047,9 @@ class _VideoWebViewScreenState extends State<_VideoWebViewScreen> {
   }
 }
 
+// -------------------------------------------------------------
+// PostVideoPlayer (Web Video View & Mobile WebView without AdMob on Download)
+// -------------------------------------------------------------
 class PostVideoPlayer extends StatefulWidget {
   final String videoUrl;
   final String userName;
@@ -3071,13 +3076,10 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
   late final WebViewController _controller;
   bool _isLoading = true;
 
-  InterstitialAd? _interstitialAd;
-  bool _isInterstitialAdLoaded = false;
-
   @override
   void initState() {
     super.initState();
-    _loadInterstitialAd();
+    if (kIsWeb) return; // Web ဖြစ်လျှင် Mobile WebView ကို ကျော်မည်
 
     final String thumbVideoUrl = "${widget.videoUrl}#t=0.1";
 
@@ -3116,25 +3118,6 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
                 ViewChannel.postMessage('play_video');
               }
             }
-
-            // 🌟 Landscape video များအတွက် Fullscreen ဝင်ပါက Screen လှည့်ခြင်းကို ထိန်းချုပ်ရန်
-            const video = document.getElementById('vid');
-            video.addEventListener('fullscreenchange', (event) => {
-              if (document.fullscreenElement) {
-                // Fullscreen ဝင်သွားချိန် landscape ဖြစ်နေရင် screen orientation ကို ချိန်ညှိရန်
-                if (screen.orientation && screen.orientation.lock) {
-                  // ဗီဒီယိုရဲ့ အကျယ်နဲ့ အအမြင့်ကို စစ်ပြီး landscape လိုအပ်က lock မည်
-                  if (video.videoWidth > video.videoHeight) {
-                    screen.orientation.lock('landscape').catch(() => {});
-                  }
-                }
-              } else {
-                // Fullscreen ထွက်လျှင် မူလအခြေအနေသို့ ပြန်ို့ရန်
-                if (screen.orientation && screen.orientation.unlock) {
-                  screen.orientation.unlock();
-                }
-              }
-            });
           </script>
         </body>
       </html>
@@ -3163,42 +3146,7 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
       ..loadHtmlString(htmlContent);
   }
 
-  void _loadInterstitialAd() {
-    InterstitialAd.load(
-      adUnitId: 'ca-app-pub-8755843731256088/3526033189',
-      request: const AdRequest(),
-      adLoadCallback: InterstitialAdLoadCallback(
-        onAdLoaded: (InterstitialAd ad) {
-          _interstitialAd = ad;
-          _isInterstitialAdLoaded = true;
-        },
-        onAdFailedToLoad: (LoadAdError error) {
-          _interstitialAd = null;
-          _isInterstitialAdLoaded = false;
-        },
-      ),
-    );
-  }
-
-  void _showInterstitialAdAndNavigate() {
-    if (_isInterstitialAdLoaded && _interstitialAd != null) {
-      _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
-        onAdDismissedFullScreenContent: (InterstitialAd ad) {
-          ad.dispose();
-          _loadInterstitialAd();
-          _navigateToWebView();
-        },
-        onAdFailedToShowFullScreenContent: (InterstitialAd ad, AdError error) {
-          ad.dispose();
-          _navigateToWebView();
-        },
-      );
-      _interstitialAd!.show();
-    } else {
-      _navigateToWebView();
-    }
-  }
-
+  // 🌟 AdMob လုံးဝ မပါတော့ဘဲ တိုက်ရိုက် WebView သို့ သွားမည့် Function
   void _navigateToWebView() {
     Navigator.push(
       context,
@@ -3249,10 +3197,38 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    // 🌟 Web ဖြစ်နေလျှင် HTML5 Video Player ကို တိုက်ရိုက်ပြသရန် (Error ကင်းစေရန်)
+    if (kIsWeb) {
+      String htmlViewId =
+          'video-${widget.postId}-${DateTime.now().millisecondsSinceEpoch}';
+
+      ui_web.platformViewRegistry.registerViewFactory(
+        htmlViewId,
+        (int viewId) {
+          html.VideoElement videoElement = html.VideoElement()
+            ..src = widget.videoUrl
+            ..controls = true
+            ..autoplay = false
+            ..muted = false
+            ..style.width = '100%'
+            ..style.height = '100%'
+            ..style.objectFit = 'contain'
+            ..style.backgroundColor = '#000000';
+
+          return videoElement;
+        },
+      );
+
+      return SizedBox(
+        height: 250,
+        width: double.infinity,
+        child: HtmlElementView(viewType: htmlViewId),
+      );
+    }
+
+    return SizedBox(
       height: 250,
       width: double.infinity,
-      color: Colors.black,
       child: Stack(
         children: [
           WebViewWidget(controller: _controller),
@@ -3260,27 +3236,13 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
             const Center(
               child: CircularProgressIndicator(color: Colors.white),
             ),
-          Positioned(
-            top: 8,
-            right: 8,
-            child: GestureDetector(
-              onTap: () {
-                _showInterstitialAdAndNavigate();
-              },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.download, color: Colors.white, size: 20),
-                    SizedBox(width: 4),
-                  ],
-                ),
+          Positioned.fill(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _navigateToWebView,
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
               ),
             ),
           ),
@@ -3305,8 +3267,10 @@ class CreatePostPage extends StatefulWidget {
 class _CreatePostPageState extends State<CreatePostPage> {
   final TextEditingController _textController = TextEditingController();
   final List<XFile> _selectedImages = [];
-  File? _selectedVideo;
-  File? _selectedAudio; // 🌟 သီချင်းဖိုင်အတွက်
+  XFile? _selectedVideo;
+  XFile? _selectedAudio;
+  Uint8List? _videoBytes;
+  Uint8List? _audioBytes; // 🌟 သီချင်းဖိုင်အတွက်
   String? _videoThumbnailPath;
   bool _isVideo = false;
   bool _isLoading = false;
@@ -3459,114 +3423,46 @@ class _CreatePostPageState extends State<CreatePostPage> {
   double _audioStartSecond = 0.0;
 
 // 🌟 သီချင်း (Audio) ဖိုင်ရွေးချယ်ရန်နှင့် စက္ကန့် ၂၀ စာ နေရာရွေးချယ်ရန်
-  // 🌟 သီချင်း (Audio) ဖိုင်ရွေးချယ်ရန်နှင့် ဖြတ်တောက်မည့်နေရာ (Start & Duration) သတ်မှတ်ရန်
   Future<void> _pickAudio() async {
     bool isMm = isMyanmarNotifier.value;
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.audio,
+        withData: true, // 🌟 Web ရော Mobile ပါ bytes တွေပါလာစေရန် true ပေးပါ
       );
 
-      if (result != null && result.files.single.path != null) {
-        File audioFile = File(result.files.single.path!);
+      if (result != null && result.files.single.bytes != null ||
+          result?.files.single.path != null) {
+        PlatformFile platformFile = result!.files.single;
 
-        // သီချင်းအရှည်ကို စစ်ဆေးရန် ခေတ္တ Player တစ်ခုဖွင့်မည်
-        AudioPlayer tempPlayer = AudioPlayer();
-        await tempPlayer.setSource(DeviceFileSource(audioFile.path));
+        // 🌟 ဤနေရာတွင် မြန်မာစာနှင့် အထူးစာလုံးများ မပါစေရန် အင်္ဂလိပ်အမည်သစ် ပေးခြင်း
+        String safeFileName =
+            "audio_${DateTime.now().millisecondsSinceEpoch}.mp3";
 
-        // သီချင်းရဲ့ စုစုပေါင်းကြာချိန် (Duration) ကို ရယူရန်
-        Duration? totalDuration = await tempPlayer.getDuration();
-        await tempPlayer.dispose();
+        // XFile အနေဖြင့် အတိအကျ သိမ်းဆည်းရန်
+        XFile audioFile = kIsWeb
+            ? XFile.fromData(platformFile.bytes!, name: safeFileName)
+            : XFile(platformFile.path!);
 
-        double maxSeconds =
-            totalDuration != null ? totalDuration.inSeconds.toDouble() : 60.0;
-
-        if (!mounted) return;
-
-        // 🌟 သီချင်းဘယ်နေရာက စမလဲ နှင့် ဘယ်လောက်ကြာအောင် (Duration) ဖြတ်မလဲ ဆိုတာကို ရွေးမယ့် Dialog
-        double startSecond = 0.0;
-        double durationSeconds = 20.0; // Default အနေဖြင့် စက္ကန့် ၂၀
-
-        await showDialog(
-          context: context,
-          builder: (context) {
-            return StatefulBuilder(
-              builder: (context, setDialogState) {
-                return AlertDialog(
-                  title: Text(isMm
-                      ? "သီချင်း ဖြတ်တောက်ရန် (Audio Trim)"
-                      : "Trim Audio"),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isMm
-                            ? "သီချင်းစတင်မည့် စက္ကန့်ကို ရွေးချယ်ပါ (စုစုပေါင်း: ${maxSeconds.toInt} စက္ကန့်)"
-                            : "Select start second (Total: ${maxSeconds.toInt}s)",
-                        style:
-                            const TextStyle(fontSize: 13, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 10),
-                      Text("စတင်မည့်နေရာ: ${startSecond.toInt} စက္ကန့်",
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Slider(
-                        value: startSecond,
-                        min: 0.0,
-                        max: maxSeconds > 20 ? maxSeconds - 20 : 0.0,
-                        divisions:
-                            maxSeconds > 20 ? (maxSeconds - 20).toInt() : 1,
-                        label: "${startSecond.toInt} s",
-                        onChanged: (val) {
-                          setDialogState(() {
-                            startSecond = val;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                          "ကြာချိန် (Duration): ${durationSeconds.toInt} စက္ကန့်",
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Slider(
-                        value: durationSeconds,
-                        min: 5.0,
-                        max: 30.0, // အများဆုံး စက္ကန့် ၃၀ အထိ ခွင့်ပြုမည်
-                        divisions: 25,
-                        label: "${durationSeconds.toInt} s",
-                        onChanged: (val) {
-                          setDialogState(() {
-                            durationSeconds = val;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(isMm ? "မလုပ်တော့ပါ" : "Cancel"),
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      child: Text(isMm ? "အတည်ပြုမည်" : "Confirm"),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        );
+        if (kIsWeb) {
+          _audioBytes = platformFile.bytes;
+        }
 
         setState(() {
           _selectedAudio = audioFile;
-          _audioStartSecond = startSecond;
-          // လိုအပ်ပါက durationSeconds ကိုပါ variable အနေဖြင့် သိမ်းဆည်းနိုင်ပါသည်
+          _audioStartSecond = 0.0;
         });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isMm ? "သီချင်းဖိုင် ရွေးချယ်ပြီးပါပြီ" : "Audio file selected",
+            ),
+          ),
+        );
       }
     } catch (e) {
-      print("Audio Picker Error: $e");
+      print("Audio Picker Error: Audio Picker Error: $e");
     }
   }
 
@@ -3617,51 +3513,66 @@ class _CreatePostPageState extends State<CreatePostPage> {
         : await picker.pickImage(source: source);
 
     if (pickedFile != null) {
-      File file = File(pickedFile.path);
-
       if (isVideo) {
-        try {
-          MediaInfo? mediaInfo = await VideoCompress.getMediaInfo(file.path);
-          // 🌟 ၃ မိနစ် (180,000 milliseconds) ထက် ကျော်လွန်ပါက တားမြစ်မည်
-          if (mediaInfo.duration != null && mediaInfo.duration! > 180000) {
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  isMm
-                      ? "ဗီဒီယိုသည် ၃ မိနစ် (စက္ကန့် ၁၈၀) ထက် မကျော်ရပါ။"
-                      : "Video must not exceed 3 minutes (180 seconds).",
-                ),
-              ),
-            );
-            return;
+        if (kIsWeb) {
+          // 🌟 Web အတွက် ဗီဒီယို bytes ယူခြင်း
+          Uint8List bytes = await pickedFile.readAsBytes();
+          setState(() {
+            _selectedImages.clear();
+            _selectedVideo = pickedFile;
+            _videoBytes = bytes;
+            _isVideo = true;
+          });
+        } else {
+          // Mobile အတွက်
+          if (!kIsWeb) {
+            File file = File(pickedFile.path);
+            try {
+              MediaInfo? mediaInfo =
+                  await VideoCompress.getMediaInfo(file.path);
+              if (mediaInfo.duration != null && mediaInfo.duration! > 180000) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      isMm
+                          ? "ဗီဒီယိုသည် ၃ မိနစ် (စက္ကန့် ၁၈၀) ထက် မကျော်ရပါ။"
+                          : "Video must not exceed 3 minutes (180 seconds).",
+                    ),
+                  ),
+                );
+                return;
+              }
+            } catch (e) {
+              print("Media Info Error: $e");
+            }
           }
-        } catch (e) {
-          print("Media Info Error: $e");
-        }
+          String? thumbPath;
+          try {
+            // ignore: prefer_typing_uninitialized_variables
+            var file = File(pickedFile.path);
+            final thumbnailFile = await VideoCompress.getFileThumbnail(
+              file.path,
+              quality: 50,
+              position: -1,
+            );
+            thumbPath = thumbnailFile.path;
+          } catch (e) {
+            print("VideoCompress Thumbnail Error: $e");
+          }
 
-        String? thumbPath;
-        try {
-          final thumbnailFile = await VideoCompress.getFileThumbnail(
-            file.path,
-            quality: 50,
-            position: -1,
-          );
-          thumbPath = thumbnailFile.path;
-        } catch (e) {
-          print("VideoCompress Thumbnail Error: $e");
+          final bytes = await pickedFile.readAsBytes();
+          setState(() {
+            _selectedImages.clear();
+            _selectedVideo = pickedFile;
+            _videoThumbnailPath = thumbPath;
+            _videoBytes = bytes;
+            _isVideo = true;
+          });
         }
-
-        setState(() {
-          _selectedImages.clear();
-          _selectedVideo = file;
-          _videoThumbnailPath = thumbPath;
-          _isVideo = true;
-        });
       } else {
         setState(() {
-          _selectedImages
-              .add(XFile(pickedFile.path)); // 👈 XFile အဖြစ် အတိအကျ ထည့်ပေးပါ
+          _selectedImages.add(pickedFile);
         });
       }
     }
@@ -3927,8 +3838,11 @@ class _CreatePostPageState extends State<CreatePostPage> {
       // 2. ဗီဒီယို Upload တင်ခြင်း
       if (_selectedVideo != null && _isVideo) {
         if (_isCancelled) return;
+
+        // 🌟 Web ဖြစ်စေ Mobile ဖြစ်စေ XFile ကို တိုက်ရိုက် ပို့ပေးပါ
         String? uploadedVideoUrl =
             await R2Service.uploadFile(_selectedVideo!, 'posts_media');
+
         if (uploadedVideoUrl != null) {
           singleMediaUrl = uploadedVideoUrl;
           mediaUrls.add(uploadedVideoUrl);
@@ -3943,18 +3857,13 @@ class _CreatePostPageState extends State<CreatePostPage> {
       }
 
       // 3. သီချင်း (Audio) Upload တင်ခြင်း
-      // 3. သီချင်း (Audio) Upload တင်ခြင်း
       if (_selectedAudio != null) {
         if (_isCancelled) return;
-
-        // 🌟 Web ဖြစ်စေ Mobile ဖြစ်စေ File object ကို R2Service သို့ ပို့၍ Upload တင်ခြင်း
-        String? uploadedAudioUrl =
-            await R2Service.uploadFile(_selectedAudio!, 'posts_audio');
-
+        String? uploadedAudioUrl = await R2Service.uploadFile(
+            _selectedAudio!, 'posts_audio'); // 🌟 XFile ပို့ရန်
         if (uploadedAudioUrl != null) {
           audioUrl = uploadedAudioUrl;
         }
-
         currentIndex++;
         if (dialogStateSetter != null) {
           dialogStateSetter!(() {
@@ -4443,6 +4352,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                           ),
 
                         // 🌟 ၂။ ဗီဒီယို ရွေးချယ်ထားလျှင် ပြရန်
+                        // 🌟 ၂။ ဗီဒီယို ရွေးချယ်ထားလျှင် ပြရန် (Web နဲ့ Mobile နှစ်ခုလုံးအတွက်)
                         if (_selectedVideo != null && _isVideo)
                           Stack(
                             alignment: Alignment.center,
@@ -4456,15 +4366,25 @@ class _CreatePostPageState extends State<CreatePostPage> {
                                 ),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
-                                  child: _videoThumbnailPath != null
-                                      ? Image.file(
-                                          File(_videoThumbnailPath!),
+                                  child: kIsWeb && _videoBytes != null
+                                      ? Image.memory(
+                                          _videoBytes!,
                                           fit: BoxFit.cover,
                                         )
-                                      : const Center(
-                                          child: Icon(Icons.videocam,
-                                              size: 50, color: Colors.white70),
-                                        ),
+                                      : (_videoThumbnailPath != null
+                                          ? Image.file(
+                                              File(_videoThumbnailPath!),
+                                              fit: BoxFit.cover,
+                                            )
+                                          : Container(
+                                              color: Colors.black,
+                                              child: const Center(
+                                                child: Icon(
+                                                    Icons.play_circle_filled,
+                                                    size: 50,
+                                                    color: Colors.white),
+                                              ),
+                                            )),
                                 ),
                               ),
                               const Positioned.fill(
@@ -4488,6 +4408,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                                   onPressed: () {
                                     setState(() {
                                       _selectedVideo = null;
+                                      _videoBytes = null;
                                       _videoThumbnailPath = null;
                                       _isVideo = false;
                                     });

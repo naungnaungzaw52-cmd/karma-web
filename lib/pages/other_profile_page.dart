@@ -3,6 +3,7 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -23,6 +24,9 @@ import 'package:karma/utilis/theme_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:karma/widgets/banner_ad_widget.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+import 'dart:ui_web' as ui_web;
 
 class OtherProfilePage extends StatefulWidget {
   final String userId;
@@ -74,9 +78,10 @@ class _OtherProfilePageState extends State<OtherProfilePage>
   }
 
   Future<void> _loadInterstitialAd() async {
+    if (kIsWeb) return; // 🌟 Web ဖြစ်လျှင် Ad မခေါ်ရန်
+
     InterstitialAd.load(
-      adUnitId:
-          'ca-app-pub-8755843731256088/3526033189', // Replace with your ad unit ID
+      adUnitId: 'ca-app-pub-8755843731256088/3526033189',
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
@@ -931,6 +936,12 @@ class _OtherProfilePageState extends State<OtherProfilePage>
   }
 
   void _showAdAndDownload(String videoUrl, Map<String, dynamic> userData) {
+    if (kIsWeb) {
+      _navigateToDownload(
+          videoUrl, userData); // 🌟 Web ဖြစ်လျှင် Ad မပြဘဲ တိုက်ရိုက်သွားရန်
+      return;
+    }
+
     if (_isAdLoaded && _interstitialAd != null) {
       _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
         onAdDismissedFullScreenContent: (ad) {
@@ -1847,14 +1858,32 @@ class _VideoWebViewScreenState extends State<_VideoWebViewScreen> {
     });
 
     try {
+      // 🌟 Web အတွက် Download ဆွဲနည်း
+      if (kIsWeb) {
+        // Web မှာဆိုရင် browser ကနေ တိုက်ရိုက် save လို့ရအောင် ဤသို့လုပ်ပါ
+        final response = await http.get(Uri.parse(widget.videoUrl));
+        if (response.statusCode == 200) {
+          // Web မှာ blob URL ဖန်တီးပြီး download ဆွဲခြင်း
+          // (သို့) url_launcher သုံးပြီး တိုက်ရိုက်ဖွင့်ပေးခြင်းလည်း လုပ်နိုင်ပါတယ်
+          final uri = Uri.parse(widget.videoUrl);
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        }
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Video download started successfully')),
+        );
+        return;
+      }
+
+      // 🌟 Mobile (Android / iOS) အတွက် Download ဆွဲနည်း
       final response = await http.get(Uri.parse(widget.videoUrl));
       if (response.statusCode == 200) {
         Directory? directory;
         if (Platform.isAndroid) {
-          directory = Directory('/storage/emulated/0/Karma/Download');
-          if (!await directory.exists()) {
-            directory = await getExternalStorageDirectory();
-          }
+          directory =
+              await getExternalStorageDirectory(); // ပိုပြီးလုံခြုံတဲ့ App directory ကိုသုံးခြင်းက Error ကင်းပါတယ်
         } else {
           directory = await getApplicationDocumentsDirectory();
         }
@@ -1877,6 +1906,7 @@ class _VideoWebViewScreenState extends State<_VideoWebViewScreen> {
         );
       }
     } catch (e) {
+      print("Download Error: $e");
       if (!mounted) return;
       final isMm = isMyanmarNotifier.value;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2663,7 +2693,7 @@ class _CommentBottomSheetState extends State<_CommentBottomSheet> {
 }
 
 // -------------------------------------------------------------
-// PostVideoPlayer
+// PostVideoPlayer (Web Video View & Mobile WebView without AdMob on Download)
 // -------------------------------------------------------------
 class PostVideoPlayer extends StatefulWidget {
   final String videoUrl;
@@ -2694,8 +2724,8 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
   @override
   void initState() {
     super.initState();
+    if (kIsWeb) return; // Web ဖြစ်လျှင် Mobile WebView ကို ကျော်မည်
 
-    // URL နောက်က #t=0.1 ကို ဖြုတ်ပြီး တိုက်ရိုက်သုံးပါ (Query Parameters တွေ မပျက်စေရန်)
     final String thumbVideoUrl = "${widget.videoUrl}#t=0.1";
 
     final htmlContent = '''
@@ -2733,25 +2763,6 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
                 ViewChannel.postMessage('play_video');
               }
             }
-
-            // 🌟 Landscape video များအတွက် Fullscreen ဝင်ပါက Screen လှည့်ခြင်းကို ထိန်းချုပ်ရန်
-            const video = document.getElementById('vid');
-            video.addEventListener('fullscreenchange', (event) => {
-              if (document.fullscreenElement) {
-                // Fullscreen ဝင်သွားချိန် landscape ဖြစ်နေရင် screen orientation ကို ချိန်ညှိရန်
-                if (screen.orientation && screen.orientation.lock) {
-                  // ဗီဒီယိုရဲ့ အကျယ်နဲ့ အအမြင့်ကို စစ်ပြီး landscape လိုအပ်က lock မည်
-                  if (video.videoWidth > video.videoHeight) {
-                    screen.orientation.lock('landscape').catch(() => {});
-                  }
-                }
-              } else {
-                // Fullscreen ထွက်လျှင် မူလအခြေအနေသို့ ပြန်ို့ရန်
-                if (screen.orientation && screen.orientation.unlock) {
-                  screen.orientation.unlock();
-                }
-              }
-            });
           </script>
         </body>
       </html>
@@ -2760,6 +2771,14 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.black)
+      ..addJavaScriptChannel(
+        'ViewChannel',
+        onMessageReceived: (JavaScriptMessage message) {
+          if (message.message == 'play_video') {
+            _incrementViewCount();
+          }
+        },
+      )
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (String url) {
@@ -2772,12 +2791,89 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
       ..loadHtmlString(htmlContent);
   }
 
+  // 🌟 AdMob လုံးဝ မပါတော့ဘဲ တိုက်ရိုက် WebView သို့ သွားမည့် Function
+  void _navigateToWebView() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _VideoWebViewScreen(
+          videoUrl: widget.videoUrl,
+          userName: widget.userName,
+          profileImageUrl: widget.profileImageUrl,
+          uid: widget.uid,
+          postId: widget.postId,
+          role: widget.role,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _incrementViewCount() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) return;
+
+      final docRef =
+          FirebaseFirestore.instance.collection('posts').doc(widget.postId);
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final docSnap = await transaction.get(docRef);
+        if (!docSnap.exists) return;
+
+        final data = docSnap.data() as Map<String, dynamic>;
+        final List<dynamic> viewedUsers = data['viewedUserIds'] ?? [];
+
+        if (!viewedUsers.contains(currentUser.uid)) {
+          final rawView = data['viewCount'];
+          int currentViews = (rawView is int)
+              ? rawView
+              : (int.tryParse(rawView.toString()) ?? 0);
+
+          transaction.update(docRef, {
+            'viewedUserIds': FieldValue.arrayUnion([currentUser.uid]),
+            'viewCount': currentViews + 1,
+          });
+        }
+      });
+    } catch (e) {
+      print("View count update CATCHERROR: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
+    // 🌟 Web ဖြစ်နေလျှင် HTML5 Video Player ကို တိုက်ရိုက်ပြသရန် (Error ကင်းစေရန်)
+    if (kIsWeb) {
+      String htmlViewId =
+          'video-${widget.postId}-${DateTime.now().millisecondsSinceEpoch}';
+
+      ui_web.platformViewRegistry.registerViewFactory(
+        htmlViewId,
+        (int viewId) {
+          html.VideoElement videoElement = html.VideoElement()
+            ..src = widget.videoUrl
+            ..controls = true
+            ..autoplay = false
+            ..muted = false
+            ..style.width = '100%'
+            ..style.height = '100%'
+            ..style.objectFit = 'contain'
+            ..style.backgroundColor = '#000000';
+
+          return videoElement;
+        },
+      );
+
+      return SizedBox(
+        height: 250,
+        width: double.infinity,
+        child: HtmlElementView(viewType: htmlViewId),
+      );
+    }
+
+    return SizedBox(
       height: 250,
       width: double.infinity,
-      color: Colors.black,
       child: Stack(
         children: [
           WebViewWidget(controller: _controller),
@@ -2785,6 +2881,16 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
             const Center(
               child: CircularProgressIndicator(color: Colors.white),
             ),
+          Positioned.fill(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _navigateToWebView,
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+              ),
+            ),
+          ),
         ],
       ),
     );

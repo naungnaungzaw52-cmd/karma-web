@@ -1,10 +1,16 @@
 // ignore_for_file: use_build_context_synchronously, avoid_print
 
-// ignore: unused_import
-import 'dart:io';
+// ignore: unused_import, avoid_web_libraries_in_flutter
+import 'dart:html';
+// ignore: unnecessary_import
 import 'dart:typed_data';
 import 'dart:ui';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:ui_web' as ui_web;
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -304,7 +310,6 @@ class _ProfilePageState extends State<ProfilePage>
     });
 
     try {
-      // 🌟 Flutter Web ရော Mobile ပါ stream/namespace error လုံးဝမတက်အောင် XFile နဲ့ Bytes ကို တိုက်ရိုက်သုံးခြင်း
       Uint8List fileBytes = await pickedFile.readAsBytes();
       String fileName = "profile_${DateTime.now().millisecondsSinceEpoch}.jpg";
 
@@ -312,14 +317,13 @@ class _ProfilePageState extends State<ProfilePage>
       String? newImageUrl = await R2Service.uploadFile(xFile, 'profile_images');
 
       if (newImageUrl != null) {
-        String? oldImageUrl = currentData['profileImageUrl'];
-        if (oldImageUrl != null &&
-            oldImageUrl
-                .contains("pub-4e491f3d159e4aa4bc2678deef207097.r2.dev")) {
-          await R2Service.deleteFile(oldImageUrl);
-        }
+        // 🌟 ပုံအသစ်ရလာပါက Profile ကို အပ်ဒိတ်လုပ်မည်
         await _updateProfileAndPosts(
             _nameController.text, _bioController.text, newImageUrl);
+
+        // 🌟 UI ချက်ချင်း ပြောင်းလဲစေရန် setState ခေါ်ပေးခြင်း
+        setState(() {});
+
         if (!mounted) return;
         NavigationHelper.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -375,6 +379,7 @@ class _ProfilePageState extends State<ProfilePage>
 
       // Firebase Auth ရဲ့ DisplayName ကိုလည်း ပါ တစ်ခါတည်း Update လုပ်မယ်
       await currentUser.updateDisplayName(name);
+      await currentUser.updatePhotoURL(avatarUrl);
 
       // ၂. Posts Collection ထဲက ဒီ User ရဲ့ uid နဲ့ တူတဲ့ Post တွေအားလုံးကို ရှာမယ်
       QuerySnapshot postSnapshot = await FirebaseFirestore.instance
@@ -2669,14 +2674,15 @@ class _CommentBottomSheetState extends State<_CommentBottomSheet> {
 
 class PostVideoPlayer extends StatefulWidget {
   final String videoUrl;
-  const PostVideoPlayer(
-      {super.key,
-      required this.videoUrl,
-      required userName,
-      required profileImageUrl,
-      required uid,
-      required String postId,
-      required role});
+  const PostVideoPlayer({
+    super.key,
+    required this.videoUrl,
+    required dynamic userName,
+    required dynamic profileImageUrl,
+    required dynamic uid,
+    required String postId,
+    required dynamic role,
+  });
 
   @override
   State<PostVideoPlayer> createState() => _PostVideoPlayerState();
@@ -2689,6 +2695,7 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
   @override
   void initState() {
     super.initState();
+    if (kIsWeb) return; // Web ဖြစ်လျှင် Mobile WebView ကို ကျော်မည်
 
     final String thumbVideoUrl = "${widget.videoUrl}#t=0.1";
 
@@ -2716,37 +2723,9 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
           </style>
         </head>
         <body>
-          <video id="vid" controls playsinline webkit-playsinline preload="metadata" onplay="sendViewCount()">
+          <video id="vid" controls playsinline webkit-playsinline preload="metadata">
             <source src="$thumbVideoUrl" type="video/mp4">
           </video>
-          <script>
-            let hasPlayed = false;
-            function sendViewCount() {
-              if (!hasPlayed) {
-                hasPlayed = true;
-                ViewChannel.postMessage('play_video');
-              }
-            }
-
-            // 🌟 Landscape video များအတွက် Fullscreen ဝင်ပါက Screen လှည့်ခြင်းကို ထိန်းချုပ်ရန်
-            const video = document.getElementById('vid');
-            video.addEventListener('fullscreenchange', (event) => {
-              if (document.fullscreenElement) {
-                // Fullscreen ဝင်သွားချိန် landscape ဖြစ်နေရင် screen orientation ကို ချိန်ညှိရန်
-                if (screen.orientation && screen.orientation.lock) {
-                  // ဗီဒီယိုရဲ့ အကျယ်နဲ့ အအမြင့်ကို စစ်ပြီး landscape လိုအပ်က lock မည်
-                  if (video.videoWidth > video.videoHeight) {
-                    screen.orientation.lock('landscape').catch(() => {});
-                  }
-                }
-              } else {
-                // Fullscreen ထွက်လျှင် မူလအခြေအနေသို့ ပြန်ို့ရန်
-                if (screen.orientation && screen.orientation.unlock) {
-                  screen.orientation.unlock();
-                }
-              }
-            });
-          </script>
         </body>
       </html>
     ''';
@@ -2768,6 +2747,38 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    // 🌟 1. Web ဖြစ်နေလျှင် အဖြူကွက်မဖြစ်စေဘဲ HTML5 Video Element ကို တိုက်ရိုက်ပြသရန်
+    if (kIsWeb) {
+      String htmlViewId =
+          'profile-video-${widget.videoUrl}-${UniqueKey().toString()}';
+
+      // ignore: undefined_prefixed_name, avoid_web_libraries_in_flutter
+      ui_web.platformViewRegistry.registerViewFactory(
+        htmlViewId,
+        (int viewId) {
+          final html.VideoElement videoElement = html.VideoElement()
+            ..src = widget.videoUrl
+            ..controls = true
+            ..autoplay = false
+            ..muted = false
+            ..style.width = '100%'
+            ..style.height = '100%'
+            ..style.objectFit = 'contain'
+            ..style.backgroundColor = '#000000';
+
+          return videoElement;
+        },
+      );
+
+      return Container(
+        height: 250,
+        width: double.infinity,
+        color: Colors.black,
+        child: HtmlElementView(viewType: htmlViewId),
+      );
+    }
+
+    // 🌟 2. Mobile (Android / iOS) အတွက် WebView
     return Container(
       height: 250,
       width: double.infinity,
