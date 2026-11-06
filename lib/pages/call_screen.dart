@@ -1,6 +1,7 @@
 // ignore_for_file: avoid_print, use_build_context_synchronously
 
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
@@ -52,51 +53,103 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   Future<void> _initRenderers() async {
-    await _localRenderer.initialize();
-    await _remoteRenderer.initialize();
-    await _setupWebRTC();
-    _listenToCallStatus();
+    try {
+      print("STEP 1: Local Renderer Initializing");
+      await _localRenderer.initialize();
+      print("STEP 2: Local Renderer Initialized");
+
+      await _remoteRenderer.initialize();
+      print("STEP 3: Remote Renderer Initialized");
+
+      await _setupWebRTC();
+      print("STEP 4: WebRTC Setup Completed");
+
+      _listenToCallStatus();
+    } catch (e, stackTrace) {
+      print("❌ RENDERER INIT ERROR: $e");
+      print(stackTrace);
+    }
   }
 
   Future<void> _setupWebRTC() async {
     try {
+      // STEP 1
+      print("WEBRTC STEP 1: Before createPeerConnection");
+
       _peerConnection = await createPeerConnection({
         'iceServers': [
-          {'urls': 'stun:stun.l.google.com:19302'}
+          {'urls': 'stun:stun.l.google.com:19302'},
+          {'urls': 'stun:stun1.l.google.com:19302'},
         ]
       });
 
+      // STEP 2
+      print("WEBRTC STEP 2: After createPeerConnection");
+
+      // STEP 3
+      print("WEBRTC STEP 3: Getting User Media");
+
       _localStream = await navigator.mediaDevices.getUserMedia({
         'audio': true,
-        'video': {'facingMode': 'user'},
+        'video': {
+          'facingMode': 'user',
+          'width': 640,
+          'height': 480,
+        },
       });
 
+      print("WEBRTC STEP 4: User Media Obtained");
+
+      print("STEP 5: Before setting local renderer");
+      if (kIsWeb) {
+        final cameras = await Helper.cameras;
+
+        print("📸 Available Cameras: ${cameras.length}");
+
+        for (int i = 0; i < cameras.length; i++) {
+          print("CAMERA [$i]");
+          print("Label: ${cameras[i].label}");
+          print("Device ID: ${cameras[i].deviceId}");
+        }
+      }
       if (_localStream != null) {
         _localRenderer.srcObject = _localStream;
+
+        print("STEP 6: Local renderer assigned");
+
         for (var track in _localStream!.getTracks()) {
-          _peerConnection!.addTrack(track, _localStream!);
+          print("STEP 7: Before addTrack - ${track.kind}");
+
+          await _peerConnection!.addTrack(track, _localStream!);
+
+          print("STEP 8: After addTrack");
         }
       }
 
-      // Default အနေဖြင့် ဖုန်းခေါ်ဆိုမှု စတင်ချိန်တွင် Speaker ကို On ပေးထားခြင်း
-      await Helper.setSpeakerphoneOn(true);
+      print("STEP 9: Before setSpeakerphoneOn");
+
+      if (!kIsWeb) {
+        await Helper.setSpeakerphoneOn(true);
+      }
+
+      print("STEP 10: After setSpeakerphoneOn");
       setState(() {
         _isSpeakerOn = true;
       });
 
+      // 2. Remote Track လက်ခံခြင်း
       _peerConnection!.onTrack = (RTCTrackEvent event) {
         print(
-            "🔥🔥🔥 ဝင်လာပြီဟေ့! Remote Track ရောက်လာပါပြီ: ${event.streams.length} streams");
+            "🔥🔥🔥 Remote Track ရောက်လာပါပြီ: ${event.streams.length} streams");
         if (event.streams.isNotEmpty) {
           setState(() {
             _remoteRenderer.srcObject = event.streams[0];
             _isConnecting = false;
-            print(
-                "✅ Remote Renderer ထဲသို့ Stream အောင်မြင်စွာ ထည့်ပြီးပါပြီ။");
           });
         }
       };
 
+      // 3. ICE Candidate ပို့ခြင်း
       _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
         if (candidate.candidate != null) {
           String collectionName =
@@ -111,10 +164,9 @@ class _CallScreenState extends State<CallScreen> {
 
       DocumentReference callRef =
           FirebaseFirestore.instance.collection('calls').doc(widget.callId);
-      var callSnapshot = await callRef.get();
-      var callData = callSnapshot.data() as Map<String, dynamic>;
 
       if (widget.isCaller) {
+        // --- CALLER LOGIC ---
         RTCSessionDescription offer = await _peerConnection!.createOffer();
         await _peerConnection!.setLocalDescription(offer);
 
@@ -122,14 +174,15 @@ class _CallScreenState extends State<CallScreen> {
           'offer': {'type': offer.type, 'sdp': offer.sdp},
         });
 
+        // Answer ကို စောင့်ဖတ်ခြင်း
         _answerSub = callRef.snapshots().listen((snapshot) async {
           if (!snapshot.exists) return;
           var data = snapshot.data() as Map<String, dynamic>;
 
           if (data['answer'] != null && _peerConnection != null) {
-            var answer = data['answer'];
-            var current = await _peerConnection!.getRemoteDescription();
-            if (current == null || current.sdp != answer['sdp']) {
+            var remoteDesc = await _peerConnection!.getRemoteDescription();
+            if (remoteDesc == null) {
+              var answer = data['answer'];
               await _peerConnection!.setRemoteDescription(
                 RTCSessionDescription(answer['sdp'], answer['type']),
               );
@@ -137,6 +190,7 @@ class _CallScreenState extends State<CallScreen> {
           }
         });
 
+        // Callee Candidates များကို ထည့်သွင်းခြင်း
         _candidateSub = callRef
             .collection('calleeCandidates')
             .snapshots()
@@ -155,7 +209,11 @@ class _CallScreenState extends State<CallScreen> {
           }
         });
       } else {
+        // --- CALLEE LOGIC ---
+        var callSnapshot = await callRef.get();
+        var callData = callSnapshot.data() as Map<String, dynamic>;
         var offer = callData['offer'];
+
         await _peerConnection!.setRemoteDescription(
           RTCSessionDescription(offer['sdp'], offer['type']),
         );
@@ -163,11 +221,15 @@ class _CallScreenState extends State<CallScreen> {
         RTCSessionDescription answer = await _peerConnection!.createAnswer();
         await _peerConnection!.setLocalDescription(answer);
 
+        // 🌟 Callee ဘက်မှ answer ကို Firestore သို့ သေချာစွာ တင်ပေးခြင်း
         await callRef.update({
           'answer': {'type': answer.type, 'sdp': answer.sdp},
           'status': 'ongoing',
         });
+        print(
+            "✅ Callee generated and uploaded answer to Firestore successfully.");
 
+        // Caller Candidates များကို ထည့်သွင်းခြင်း
         _candidateSub = callRef
             .collection('callerCandidates')
             .snapshots()
@@ -175,7 +237,6 @@ class _CallScreenState extends State<CallScreen> {
           for (var change in snapshot.docChanges) {
             if (change.type == DocumentChangeType.added) {
               var data = change.doc.data() as Map<String, dynamic>;
-              print("📥 Caller Candidate အသစ်လက်ခံရရှိပါပြီ");
               _peerConnection?.addCandidate(
                 RTCIceCandidate(
                   data['candidate'],
@@ -187,8 +248,9 @@ class _CallScreenState extends State<CallScreen> {
           }
         });
       }
-    } catch (e) {
-      print("WebRTC Setup Error: $e");
+    } catch (e, stackTrace) {
+      print("❌ WebRTC Setup Error: $e");
+      print("❌ Stack Trace: $stackTrace");
     }
   }
 
@@ -206,12 +268,20 @@ class _CallScreenState extends State<CallScreen> {
 
   // 🌟 Speaker ဖွင့်/ပိတ် ပြောင်းရန် function
   void _toggleSpeaker() async {
+    setState(() {
+      _isSpeakerOn = !_isSpeakerOn;
+    });
+
     try {
-      setState(() {
-        _isSpeakerOn = !_isSpeakerOn;
-      });
-      await Helper.setSpeakerphoneOn(_isSpeakerOn);
-      print("🔊 Speakerphone status: $_isSpeakerOn");
+      if (kIsWeb) {
+        // Web မှာ Remote Audio ကို Mute / Unmute လုပ်မယ်
+        _remoteRenderer.muted = !_isSpeakerOn;
+      } else {
+        // Android / iOS မှာ Speaker Route ပြောင်းမယ်
+        await Helper.setSpeakerphoneOn(_isSpeakerOn);
+      }
+
+      print("🔊 Speaker status: $_isSpeakerOn");
     } catch (e) {
       print("Speaker toggle error: $e");
     }
@@ -277,9 +347,13 @@ class _CallScreenState extends State<CallScreen> {
       if (snapshot.exists) {
         var data = snapshot.data() as Map<String, dynamic>;
         if (data['status'] == 'ended' || data['status'] == 'rejected') {
-          await FlutterCallkitIncoming.endAllCalls();
-          if (mounted) {
-            Navigator.pop(context);
+          if (!kIsWeb) {
+            await FlutterCallkitIncoming.endAllCalls();
+          }
+
+          // 🌟 Navigator သေချာထွက်နိုင်ရန် Safe check ထပ်ထည့်ခြင်း
+          if (mounted && Navigator.canPop(context)) {
+            Navigator.of(context).pop();
           }
         }
       }
@@ -444,7 +518,10 @@ class _CallScreenState extends State<CallScreen> {
                         .doc(widget.callId)
                         .update({'status': 'ended'});
 
-                    await FlutterCallkitIncoming.endAllCalls();
+                    if (!kIsWeb) {
+                      // 🌟 Web မဟုတ်မှသာ CallKit ကို ပိတ်ရန်
+                      await FlutterCallkitIncoming.endAllCalls();
+                    }
 
                     if (!mounted) return;
                     Navigator.pop(context);

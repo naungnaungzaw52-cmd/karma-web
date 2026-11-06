@@ -1,5 +1,6 @@
 // ignore_for_file: avoid_print
 
+import 'package:flutter/foundation.dart'; // 🌟 kIsWeb အတွက် လိုအပ်သည်
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
@@ -21,10 +22,15 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   @override
   void initState() {
     super.initState();
-    _loadAd();
+    // 🌟 Web ဖြစ်နေပါက AdMob ကို လုံးဝ Load မလုပ်ပါ (Error တက်ခြင်းမှ ကာကွယ်ရန်)
+    if (!kIsWeb) {
+      _loadAd();
+    }
   }
 
   void _loadAd() {
+    if (kIsWeb) return; // Web ဆိုလျှင် ကျော်မည်
+
     _bannerAd = BannerAd(
       adUnitId: _adUnitId,
       request: const AdRequest(),
@@ -32,9 +38,11 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
       listener: BannerAdListener(
         onAdLoaded: (Ad ad) {
           print('Ad loaded successfully.');
-          setState(() {
-            _isAdLoaded = true;
-          });
+          if (mounted) {
+            setState(() {
+              _isAdLoaded = true;
+            });
+          }
         },
         onAdFailedToLoad: (Ad ad, LoadAdError error) {
           print('Ad failed to load: $error');
@@ -54,6 +62,11 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // 🌟 Web ဖြစ်နေပါက Ad Widget အစား ဘာမှမပြရန် (SizedBox.shrink) ပြန်ပေးမည်
+    if (kIsWeb) {
+      return const SizedBox.shrink();
+    }
+
     final themeProvider = Provider.of<ThemeProvider>(context);
     bool isDark = (themeProvider.currentTheme != 'Default');
 
@@ -64,7 +77,6 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
           margin: const EdgeInsets.symmetric(horizontal: 16),
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            // 🌟 ဤနေရာတွင် Opacity တန်ဖိုးကို 0.15 သို့မဟုတ် 0.2 သို့ ပြောင်းလိုက်ပါက အနောက်က Post များကို ဖောက်မြင်ရမည်ဖြစ်ပါသည်
             color: isDark
                 ? Colors.black.withOpacity(0.15)
                 : Colors.white.withOpacity(0.25),

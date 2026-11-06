@@ -38,6 +38,8 @@ class _MainNavigationState extends State<MainNavigation>
   final CallService _callService = CallService();
 
   StreamSubscription? _callDocSub;
+  StreamSubscription?
+      _incomingCallSub; // 🌟 Web အတွက် ဖုန်းဝင်လာသည်ကို စောင့်ဖတ်ရန်
 
   // 🌈 Rainbow Glow Animation အတွက် Controller
   late AnimationController _rainbowController;
@@ -57,6 +59,8 @@ class _MainNavigationState extends State<MainNavigation>
     if (!kIsWeb) {
       _checkCallKitEvents();
       _checkInitialCall();
+    } else {
+      _listenToWebIncomingCalls(); // 🌟 Web အတွက် သီးသန့်ခေါ်ဆိုမှုစောင့်ဖတ်ရန်
     }
     _setupForegroundMessageListener();
     _setupMessageClickListeners();
@@ -71,6 +75,7 @@ class _MainNavigationState extends State<MainNavigation>
   @override
   void dispose() {
     _callDocSub?.cancel();
+    _incomingCallSub?.cancel(); // 🌟 Cancel လုပ်ရန်
     _rainbowController.dispose();
     super.dispose();
   }
@@ -95,6 +100,110 @@ class _MainNavigationState extends State<MainNavigation>
         }
       }
     });
+  }
+
+  // 🌟 Web အတွက် Firestore မှ calls များကို စောင့်ကြည့်ပြီး ဖုန်းဝင်လာပါက Popup ပြရန်
+  // 🌟 Web အတွက် Firestore မှ calls များကို စောင့်ကြည့်ပြီး ဖုန်းဝင်လာပါက Popup ပြရန်
+  void _listenToWebIncomingCalls() {
+    if (currentUid.isEmpty) return;
+
+    // Index Error မတက်စေရန် receiverId တစ်ခုတည်းဖြင့်သာ စောင့်ဖတ်ပြီး Code ဖြင့် status စစ်မည်
+    _incomingCallSub = FirebaseFirestore.instance
+        .collection('calls')
+        .where('receiverId', isEqualTo: currentUid)
+        .snapshots()
+        .listen((snapshot) {
+      for (var change in snapshot.docChanges) {
+        if (change.type == DocumentChangeType.added ||
+            change.type == DocumentChangeType.modified) {
+          var callData = change.doc.data() as Map<String, dynamic>;
+          String status = callData['status'] ?? '';
+
+          // status က calling ဖြစ်နေမှသာလျှင် ဖုန်းဝင်လာသည်ဟု ယူဆမည်
+          if (status == 'calling') {
+            String callId = change.doc.id;
+            String callerName = callData['callerName'] ?? 'အမည်မသိ';
+            String? callerAvatar = callData['callerAvatar'];
+
+            // ဖုန်းဝင်လာပြီဆိုပါက Web Dialog ပြရန်
+            _showWebIncomingCallDialog(callId, callerName, callerAvatar);
+          }
+        }
+      }
+    });
+  }
+
+  // 🌟 Web အတွက် လက်ခံမည်/ငြင်းပယ်မည် Dialog
+  void _showWebIncomingCallDialog(
+      String callId, String callerName, String? callerAvatar) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            CircleAvatar(
+              backgroundImage: callerAvatar != null && callerAvatar.isNotEmpty
+                  ? NetworkImage(callerAvatar)
+                  : const NetworkImage(
+                      "https://cdn-icons-png.flaticon.com/512/3135/3135768.png"),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                "$callerName မှ ဗီဒီယိုခေါ်ဆိုနေသည်...",
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: const Text("ဗီဒီယိုဖုန်းခေါ်ဆိုမှု ဝင်ရောက်လာပါသည်..."),
+        actions: [
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(context);
+              // ဖုန်းငြင်းပယ်လျှင်
+              await FirebaseFirestore.instance
+                  .collection('calls')
+                  .doc(callId)
+                  .update({
+                'status': 'rejected',
+              });
+            },
+            child: const Text("ငြင်းပယ်မည်"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green, foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(context);
+              // ဖုန်းလက်ခံလျှင် status ကို accepted ပြောင်းပြီး CallScreen သို့သွားမည်
+              await FirebaseFirestore.instance
+                  .collection('calls')
+                  .doc(callId)
+                  .update({
+                'status': 'accepted',
+              });
+
+              if (!mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CallScreen(
+                    callId: callId,
+                    currentUid: currentUid,
+                    isCaller: false,
+                    userProfileImageUrl: callerAvatar,
+                  ),
+                ),
+              );
+            },
+            child: const Text("လက်ခံမည်"),
+          ),
+        ],
+      ),
+    );
   }
 
   void _setupForegroundMessageListener() {

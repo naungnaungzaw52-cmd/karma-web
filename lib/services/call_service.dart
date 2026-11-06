@@ -52,8 +52,8 @@ class CallService {
             if (receiverToken != null && receiverToken.isNotEmpty) {
               await NotificationService.sendNotification(
                 receiverToken,
-                "   ",
-                "  ",
+                "Incoming Call",
+                "$callerName is calling you...",
                 'call',
                 callId: callRef.id,
                 callerName: callerName,
@@ -75,8 +75,21 @@ class CallService {
     }
   }
 
-  // ၂။ ဖုန်းချလိုက်ခြင်း / ငြင်းပယ်ခြင်း (End / Reject Call)
-  Future<void> endCall(callId, {String? receiverId, String? currentUid}) async {
+  // 🌟 ၂။ ဖုန်းလက်ခံခြင်း (Accept Call - Callee ဘက်မှ လုပ်ဆောင်ချက်)
+  Future<void> answerCall(String callId) async {
+    try {
+      await _firestore.collection('calls').doc(callId).update({
+        'status': 'accepted',
+      });
+      print("Call $callId accepted successfully.");
+    } catch (e) {
+      print("Error accepting call: $e");
+    }
+  }
+
+  // ၃။ ဖုန်းချလိုက်ခြင်း / ငြင်းပယ်ခြင်း (End / Reject Call)
+  Future<void> endCall(String callId,
+      {String? receiverId, String? currentUid}) async {
     try {
       DocumentSnapshot callDoc =
           await _firestore.collection('calls').doc(callId).get();

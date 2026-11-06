@@ -386,6 +386,8 @@ class _LoginScreenState extends State<LoginScreen> {
         'profileImageUrl': user.photoURL ??
             "https://cdn-icons-png.flaticon.com/512/3135/3135768.png",
         'followingCount': 0,
+        'followersCount': 0, // 🌟 ဒီနေရာမှာ ထည့်ပေးပါ
+        'hobbies': [], // 🌟 ဒီနေရာမှာ array အလွတ် ထည့်ပေးပါ
         'fcmToken': fcmToken ?? "",
         'isOnline': true,
         'lastActive': FieldValue.serverTimestamp(),
