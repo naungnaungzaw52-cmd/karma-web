@@ -103648,7 +103648,7 @@ if(h==null)h=""
 d=$.bY()
 c=d.cu()
 d=d.cu()
-d=A.P(["uid",n,"email",i,"displayName",l,"bio","No bio yet","profileImageUrl",j,"followingCount",0,"fcmToken",h,"isOnline",!0,"lastActive",new A.b_(c,c),"createdAt",new A.b_(d,d)],t.N,t.z)
+d=A.P(["uid",n,"email",i,"displayName",l,"bio","No bio yet","profileImageUrl",j,"followingCount",0,"followersCount",0,"hobbies",[],"fcmToken",h,"isOnline",!0,"lastActive",new A.b_(c,c),"createdAt",new A.b_(d,d)],t.N,t.z)
 c=A.qO(!0)
 d=A.kH(d)
 d.toString
