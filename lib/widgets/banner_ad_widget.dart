@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
 import 'package:karma/utilis/theme_provider.dart';
+import 'banner_ad_web_stub.dart' if (dart.library.html) 'banner_ad_web.dart';
 
 class BannerAdWidget extends StatefulWidget {
   const BannerAdWidget({super.key});
@@ -62,6 +63,10 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // WEB: Adsterra Banner
+    if (kIsWeb) {
+      return const WebBannerAdWidget();
+    }
     // 🌟 Web ဖြစ်နေပါက Ad Widget အစား ဘာမှမပြရန် (SizedBox.shrink) ပြန်ပေးမည်
     if (kIsWeb) {
       return const SizedBox.shrink();

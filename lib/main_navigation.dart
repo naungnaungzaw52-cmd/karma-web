@@ -103,7 +103,6 @@ class _MainNavigationState extends State<MainNavigation>
   }
 
   // 🌟 Web အတွက် Firestore မှ calls များကို စောင့်ကြည့်ပြီး ဖုန်းဝင်လာပါက Popup ပြရန်
-  // 🌟 Web အတွက် Firestore မှ calls များကို စောင့်ကြည့်ပြီး ဖုန်းဝင်လာပါက Popup ပြရန်
   void _listenToWebIncomingCalls() {
     if (currentUid.isEmpty) return;
 
@@ -133,20 +132,24 @@ class _MainNavigationState extends State<MainNavigation>
     });
   }
 
-  // 🌟 Web အတွက် လက်ခံမည်/ငြင်းပယ်မည် Dialog
+  // 🌟 Web အတွက် လက်ခံမည် / ငြင်းပယ်မည် Dialog
   void _showWebIncomingCallDialog(
       String callId, String callerName, String? callerAvatar) {
+    // မူလ Screen ရဲ့ context ကို သီးခြားသိမ်းထားမယ်
+    final parentContext = context;
+
     showDialog(
-      context: context,
+      context: parentContext,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: Row(
           children: [
             CircleAvatar(
               backgroundImage: callerAvatar != null && callerAvatar.isNotEmpty
                   ? NetworkImage(callerAvatar)
                   : const NetworkImage(
-                      "https://cdn-icons-png.flaticon.com/512/3135/3135768.png"),
+                      "https://cdn-icons-png.flaticon.com/512/3135/3135768.png",
+                    ),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -159,11 +162,15 @@ class _MainNavigationState extends State<MainNavigation>
         ),
         content: const Text("ဗီဒီယိုဖုန်းခေါ်ဆိုမှု ဝင်ရောက်လာပါသည်..."),
         actions: [
+          // ❌ ငြင်းပယ်မည်
           TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
             onPressed: () async {
-              Navigator.pop(context);
-              // ဖုန်းငြင်းပယ်လျှင်
+              // Dialog ကိုပိတ်မယ်
+              Navigator.pop(dialogContext);
+
               await FirebaseFirestore.instance
                   .collection('calls')
                   .doc(callId)
@@ -173,12 +180,18 @@ class _MainNavigationState extends State<MainNavigation>
             },
             child: const Text("ငြင်းပယ်မည်"),
           ),
+
+          // ✅ လက်ခံမည်
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green, foregroundColor: Colors.white),
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () async {
-              Navigator.pop(context);
-              // ဖုန်းလက်ခံလျှင် status ကို accepted ပြောင်းပြီး CallScreen သို့သွားမည်
+              // Dialog ကိုပိတ်မယ်
+              Navigator.pop(dialogContext);
+
+              // Firestore မှာ Accepted ပြောင်းမယ်
               await FirebaseFirestore.instance
                   .collection('calls')
                   .doc(callId)
@@ -186,9 +199,11 @@ class _MainNavigationState extends State<MainNavigation>
                 'status': 'accepted',
               });
 
+              // မူလ Widget ရှိနေသေးလား စစ်မယ်
               if (!mounted) return;
-              Navigator.push(
-                context,
+
+              // မူလ Screen context ကိုသုံးပြီး CallScreen သွားမယ်
+              Navigator.of(parentContext).push(
                 MaterialPageRoute(
                   builder: (context) => CallScreen(
                     callId: callId,

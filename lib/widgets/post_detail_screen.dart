@@ -1,7 +1,11 @@
 // ignore_for_file: avoid_print, use_build_context_synchronously
 
 import 'dart:ui';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+import 'dart:ui_web' as ui_web;
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1370,11 +1374,25 @@ class _CommentBottomSheetState extends State<_CommentBottomSheet> {
 }
 
 // -------------------------------------------------------------
-// PostVideoPlayer (HTML Video Player with WebView)
+// PostVideoPlayer (Web Video View & Mobile WebView)
 // -------------------------------------------------------------
 class PostVideoPlayer extends StatefulWidget {
   final String videoUrl;
-  const PostVideoPlayer({super.key, required this.videoUrl});
+  final String? userName;
+  final String? profileImageUrl;
+  final String? uid;
+  final String? postId;
+  final dynamic role;
+
+  const PostVideoPlayer({
+    super.key,
+    required this.videoUrl,
+    this.userName,
+    this.profileImageUrl,
+    this.uid,
+    this.postId,
+    this.role,
+  });
 
   @override
   State<PostVideoPlayer> createState() => _PostVideoPlayerState();
@@ -1387,6 +1405,8 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
   @override
   void initState() {
     super.initState();
+    if (kIsWeb) return; // 🌟 Web ဖြစ်လျှင် Mobile WebView ကို ကျော်မည်
+
     final String thumbVideoUrl = "${widget.videoUrl}#t=0.1";
 
     final htmlContent = '''
@@ -1413,37 +1433,9 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
           </style>
         </head>
         <body>
-          <video id="vid" controls playsinline webkit-playsinline preload="metadata" onplay="sendViewCount()">
+          <video id="vid" controls playsinline webkit-playsinline preload="metadata">
             <source src="$thumbVideoUrl" type="video/mp4">
           </video>
-          <script>
-            let hasPlayed = false;
-            function sendViewCount() {
-              if (!hasPlayed) {
-                hasPlayed = true;
-                ViewChannel.postMessage('play_video');
-              }
-            }
-
-            // 🌟 Landscape video များအတွက် Fullscreen ဝင်ပါက Screen လှည့်ခြင်းကို ထိန်းချုပ်ရန်
-            const video = document.getElementById('vid');
-            video.addEventListener('fullscreenchange', (event) => {
-              if (document.fullscreenElement) {
-                // Fullscreen ဝင်သွားချိန် landscape ဖြစ်နေရင် screen orientation ကို ချိန်ညှိရန်
-                if (screen.orientation && screen.orientation.lock) {
-                  // ဗီဒီယိုရဲ့ အကျယ်နဲ့ အအမြင့်ကို စစ်ပြီး landscape လိုအပ်က lock မည်
-                  if (video.videoWidth > video.videoHeight) {
-                    screen.orientation.lock('landscape').catch(() => {});
-                  }
-                }
-              } else {
-                // Fullscreen ထွက်လျှင် မူလအခြေအနေသို့ ပြန်ို့ရန်
-                if (screen.orientation && screen.orientation.unlock) {
-                  screen.orientation.unlock();
-                }
-              }
-            });
-          </script>
         </body>
       </html>
     ''';
@@ -1465,6 +1457,35 @@ class _PostVideoPlayerState extends State<PostVideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    // 🌟 Web ဖြစ်နေလျှင် HTML5 Video Player ကို တိုက်ရိုက်ပြသရန် (Error ကင်းစေရန်)[cite: 5]
+    if (kIsWeb) {
+      String htmlViewId =
+          'video-${widget.postId ?? DateTime.now().millisecondsSinceEpoch}-${DateTime.now().microsecond}';
+
+      ui_web.platformViewRegistry.registerViewFactory(
+        htmlViewId,
+        (int viewId) {
+          html.VideoElement videoElement = html.VideoElement()
+            ..src = widget.videoUrl
+            ..controls = true
+            ..autoplay = false
+            ..muted = false
+            ..style.width = '100%'
+            ..style.height = '100%'
+            ..style.objectFit = 'contain'
+            ..style.backgroundColor = '#000000';
+
+          return videoElement;
+        },
+      );
+
+      return SizedBox(
+        height: 250,
+        width: double.infinity,
+        child: HtmlElementView(viewType: htmlViewId),
+      );
+    }
+
     return Container(
       height: 250,
       width: double.infinity,

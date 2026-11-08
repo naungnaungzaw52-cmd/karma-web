@@ -39,6 +39,10 @@ class _CallScreenState extends State<CallScreen> {
 
   // 🌟 ဟိုဘက်လူ ကင်မရာပိတ်/ဖွင့်ထားသည်ကို Firestore မှ ဖတ်ရန်
   bool _isRemoteCameraOff = false;
+// ICE Candidate Management
+  bool _remoteDescriptionSet = false;
+
+  final List<RTCIceCandidate> _pendingCandidates = [];
 
   StreamSubscription? _callStatusSub;
   StreamSubscription? _candidateSub;
@@ -55,13 +59,17 @@ class _CallScreenState extends State<CallScreen> {
   Future<void> _initRenderers() async {
     try {
       print("STEP 1: Local Renderer Initializing");
+
       await _localRenderer.initialize();
+
       print("STEP 2: Local Renderer Initialized");
 
       await _remoteRenderer.initialize();
+
       print("STEP 3: Remote Renderer Initialized");
 
       await _setupWebRTC();
+
       print("STEP 4: WebRTC Setup Completed");
 
       _listenToCallStatus();
@@ -70,23 +78,114 @@ class _CallScreenState extends State<CallScreen> {
       print(stackTrace);
     }
   }
+// =====================================================
+  // ICE CANDIDATE MANAGEMENT
+  // =====================================================
+
+  Future<void> _addRemoteCandidate(Map<String, dynamic> data) async {
+    try {
+      if (_peerConnection == null) {
+        print("❌ PeerConnection is NULL");
+        return;
+      }
+
+      final candidate = RTCIceCandidate(
+        data['candidate'],
+        data['sdpMid'],
+        data['sdpMLineIndex'],
+      );
+
+      if (!_remoteDescriptionSet) {
+        _pendingCandidates.add(candidate);
+
+        print(
+          "⏳ ICE Candidate queued. "
+          "Total: ${_pendingCandidates.length}",
+        );
+
+        return;
+      }
+
+      await _peerConnection!.addCandidate(candidate);
+
+      print("✅ Remote ICE Candidate Added Successfully");
+    } catch (e) {
+      print("❌ Add Remote Candidate Error: $e");
+    }
+  }
+
+  Future<void> _flushPendingCandidates() async {
+    if (_peerConnection == null) return;
+
+    print(
+      "📦 Processing Pending Candidates: "
+      "${_pendingCandidates.length}",
+    );
+
+    for (final candidate in _pendingCandidates) {
+      try {
+        await _peerConnection!.addCandidate(candidate);
+
+        print("✅ Pending ICE Candidate Added");
+      } catch (e) {
+        print("❌ Pending Candidate Error: $e");
+      }
+    }
+
+    _pendingCandidates.clear();
+
+    print("📦 Pending Candidate Queue Cleared");
+  }
 
   Future<void> _setupWebRTC() async {
     try {
-      // STEP 1
       print("WEBRTC STEP 1: Before createPeerConnection");
 
       _peerConnection = await createPeerConnection({
         'iceServers': [
           {'urls': 'stun:stun.l.google.com:19302'},
-          {'urls': 'stun:stun1.l.google.com:19302'},
         ]
       });
 
-      // STEP 2
       print("WEBRTC STEP 2: After createPeerConnection");
 
-      // STEP 3
+      // ICE Connection Monitoring
+      _peerConnection!.onIceConnectionState = (state) {
+        print("🧊 ICE CONNECTION STATE: $state");
+      };
+
+      _peerConnection!.onConnectionState = (state) {
+        print("🔗 PEER CONNECTION STATE: $state");
+      };
+
+      _peerConnection!.onIceGatheringState = (state) {
+        print("📡 ICE GATHERING STATE: $state");
+
+        if (state == RTCIceGatheringState.RTCIceGatheringStateComplete) {
+          print("✅ ICE GATHERING COMPLETED");
+        }
+      };
+      // Remote Track Monitoring
+      _peerConnection!.onTrack = (RTCTrackEvent event) {
+        print("🎥 REMOTE TRACK RECEIVED");
+        print("🎥 Track Kind: ${event.track.kind}");
+        print("🎥 Track Enabled: ${event.track.enabled}");
+        print("🎥 Track Muted: ${event.track.muted}");
+
+        print(
+          "🔥 Remote Track ရောက်လာပါပြီ: "
+          "${event.streams.length} streams",
+        );
+
+        if (event.streams.isNotEmpty && mounted) {
+          setState(() {
+            _remoteRenderer.srcObject = event.streams[0];
+            _isConnecting = false;
+          });
+        }
+      };
+
+      // Get User Media
       print("WEBRTC STEP 3: Getting User Media");
 
       _localStream = await navigator.mediaDevices.getUserMedia({
@@ -101,6 +200,7 @@ class _CallScreenState extends State<CallScreen> {
       print("WEBRTC STEP 4: User Media Obtained");
 
       print("STEP 5: Before setting local renderer");
+
       if (kIsWeb) {
         final cameras = await Helper.cameras;
 
@@ -112,20 +212,24 @@ class _CallScreenState extends State<CallScreen> {
           print("Device ID: ${cameras[i].deviceId}");
         }
       }
+
       if (_localStream != null) {
         _localRenderer.srcObject = _localStream;
 
         print("STEP 6: Local renderer assigned");
 
+        // 🎵 AUDIO / VIDEO TRACK ORDER MONITORING
         for (var track in _localStream!.getTracks()) {
-          print("STEP 7: Before addTrack - ${track.kind}");
+          print("🎵 LOCAL TRACK KIND: ${track.kind}");
 
-          await _peerConnection!.addTrack(track, _localStream!);
+          await _peerConnection!.addTrack(
+            track,
+            _localStream!,
+          );
 
-          print("STEP 8: After addTrack");
+          print("✅ TRACK ADDED: ${track.kind}");
         }
       }
-
       print("STEP 9: Before setSpeakerphoneOn");
 
       if (!kIsWeb) {
@@ -133,10 +237,12 @@ class _CallScreenState extends State<CallScreen> {
       }
 
       print("STEP 10: After setSpeakerphoneOn");
-      setState(() {
-        _isSpeakerOn = true;
-      });
 
+      if (mounted) {
+        setState(() {
+          _isSpeakerOn = true;
+        });
+      }
       // 2. Remote Track လက်ခံခြင်း
       _peerConnection!.onTrack = (RTCTrackEvent event) {
         print(
@@ -148,109 +254,227 @@ class _CallScreenState extends State<CallScreen> {
           });
         }
       };
+      void logMediaLines(String label, String? sdp) {
+        print('========== $label ==========');
 
-      // 3. ICE Candidate ပို့ခြင်း
-      _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
-        if (candidate.candidate != null) {
+        for (final line in (sdp ?? '').split('\n')) {
+          if (line.startsWith('m=')) {
+            print(line);
+          }
+        }
+
+        print('============================');
+      }
+
+      // =====================================================
+// ICE CANDIDATE UPLOAD + TYPE MONITORING
+// =====================================================
+
+      _peerConnection!.onIceCandidate = (
+        RTCIceCandidate candidate,
+      ) async {
+        if (candidate.candidate == null) return;
+
+        try {
+          final candidateText = candidate.candidate!;
+
+          String candidateType = 'unknown';
+
+          if (candidateText.contains(' typ host')) {
+            candidateType = 'host';
+          } else if (candidateText.contains(' typ srflx')) {
+            candidateType = 'srflx';
+          } else if (candidateText.contains(' typ relay')) {
+            candidateType = 'relay';
+          } else if (candidateText.contains(' typ prflx')) {
+            candidateType = 'prflx';
+          }
+
+          // Candidate Diagnostic
+          print("🧊 ICE TYPE: $candidateType");
+          print("🧊 ICE MID: ${candidate.sdpMid}");
+          print("🧊 ICE MLINE: ${candidate.sdpMLineIndex}");
+
           String collectionName =
               widget.isCaller ? 'callerCandidates' : 'calleeCandidates';
-          FirebaseFirestore.instance
+
+          // မူလ Firestore Upload Logic
+          await FirebaseFirestore.instance
               .collection('calls')
               .doc(widget.callId)
               .collection(collectionName)
               .add(candidate.toMap());
+
+          print("📤 ICE Candidate Uploaded: $collectionName");
+        } catch (e) {
+          print("❌ ICE Candidate Upload Error: $e");
         }
       };
 
       DocumentReference callRef =
           FirebaseFirestore.instance.collection('calls').doc(widget.callId);
 
+      // =====================================================
+      // CALLER LOGIC
+      // =====================================================
+
       if (widget.isCaller) {
-        // --- CALLER LOGIC ---
+        print("📞 CALLER: Creating Offer");
+
         RTCSessionDescription offer = await _peerConnection!.createOffer();
+
+// 🔍 SDP Media Lines စစ်မယ်
+        logMediaLines('CALLER OFFER', offer.sdp);
+
         await _peerConnection!.setLocalDescription(offer);
 
         await callRef.update({
-          'offer': {'type': offer.type, 'sdp': offer.sdp},
+          'offer': {
+            'type': offer.type,
+            'sdp': offer.sdp,
+          },
         });
 
-        // Answer ကို စောင့်ဖတ်ခြင်း
-        _answerSub = callRef.snapshots().listen((snapshot) async {
-          if (!snapshot.exists) return;
-          var data = snapshot.data() as Map<String, dynamic>;
+        print("✅ Caller Offer Uploaded");
 
-          if (data['answer'] != null && _peerConnection != null) {
-            var remoteDesc = await _peerConnection!.getRemoteDescription();
-            if (remoteDesc == null) {
-              var answer = data['answer'];
-              await _peerConnection!.setRemoteDescription(
-                RTCSessionDescription(answer['sdp'], answer['type']),
-              );
+        // Listen for Answer
+        _answerSub = callRef.snapshots().listen(
+          (snapshot) async {
+            try {
+              if (!snapshot.exists) return;
+
+              var data = snapshot.data() as Map<String, dynamic>;
+
+              if (data['answer'] != null &&
+                  _peerConnection != null &&
+                  !_remoteDescriptionSet) {
+                var answer = data['answer'];
+
+                print("📥 Caller Received Answer");
+
+                await _peerConnection!.setRemoteDescription(
+                  RTCSessionDescription(
+                    answer['sdp'],
+                    answer['type'],
+                  ),
+                );
+
+                _remoteDescriptionSet = true;
+
+                print("✅ Caller Remote Description Set");
+
+                await _flushPendingCandidates();
+              }
+            } catch (e) {
+              print("❌ Answer Listener Error: $e");
             }
-          }
-        });
-
-        // Callee Candidates များကို ထည့်သွင်းခြင်း
-        _candidateSub = callRef
-            .collection('calleeCandidates')
-            .snapshots()
-            .listen((snapshot) {
-          for (var change in snapshot.docChanges) {
-            if (change.type == DocumentChangeType.added) {
-              var data = change.doc.data() as Map<String, dynamic>;
-              _peerConnection?.addCandidate(
-                RTCIceCandidate(
-                  data['candidate'],
-                  data['sdpMid'],
-                  data['sdpMLineIndex'],
-                ),
-              );
-            }
-          }
-        });
-      } else {
-        // --- CALLEE LOGIC ---
-        var callSnapshot = await callRef.get();
-        var callData = callSnapshot.data() as Map<String, dynamic>;
-        var offer = callData['offer'];
-
-        await _peerConnection!.setRemoteDescription(
-          RTCSessionDescription(offer['sdp'], offer['type']),
+          },
         );
 
+        // Listen for Callee Candidates
+        _candidateSub =
+            callRef.collection('calleeCandidates').snapshots().listen(
+          (snapshot) async {
+            for (var change in snapshot.docChanges) {
+              if (change.type == DocumentChangeType.added) {
+                print("📥 Caller Received Callee Candidate");
+
+                await _addRemoteCandidate(
+                  change.doc.data() as Map<String, dynamic>,
+                );
+              }
+            }
+          },
+          onError: (e) {
+            print("❌ Callee Candidate Listener Error: $e");
+          },
+        );
+      } else {
+        // =====================================================
+        // CALLEE LOGIC
+        // =====================================================
+
+        print("📲 CALLEE: Getting Caller Offer");
+
+        // 1. Get Call Document
+        var callSnapshot = await callRef.get();
+
+        if (!callSnapshot.exists) {
+          print("❌ Call Document Not Found");
+          return;
+        }
+
+        var callData = callSnapshot.data() as Map<String, dynamic>;
+
+        var offer = callData['offer'];
+
+        if (offer == null) {
+          print("❌ Caller Offer Not Found");
+          return;
+        }
+
+        // 2. Set Remote Description
+        await _peerConnection!.setRemoteDescription(
+          RTCSessionDescription(
+            offer['sdp'],
+            offer['type'],
+          ),
+        );
+
+        _remoteDescriptionSet = true;
+
+        print("✅ Callee Remote Description Set");
+
+        // 3. Add Pending ICE Candidates
+        await _flushPendingCandidates();
+
+        // 4. Listen for Caller ICE Candidates
+        _candidateSub =
+            callRef.collection('callerCandidates').snapshots().listen(
+          (snapshot) async {
+            for (var change in snapshot.docChanges) {
+              if (change.type == DocumentChangeType.added) {
+                print("📥 Callee Received Caller Candidate");
+
+                var data = change.doc.data() as Map<String, dynamic>;
+
+                await _addRemoteCandidate(data);
+              }
+            }
+          },
+          onError: (e) {
+            print("❌ Caller Candidate Listener Error: $e");
+          },
+        );
+
+        // 5. Create Answer
+        print("📞 CALLEE: Creating Answer");
+
         RTCSessionDescription answer = await _peerConnection!.createAnswer();
+
+// 🔍 SDP Media Lines စစ်မယ်
+        logMediaLines('CALLEE ANSWER', answer.sdp);
+
         await _peerConnection!.setLocalDescription(answer);
 
-        // 🌟 Callee ဘက်မှ answer ကို Firestore သို့ သေချာစွာ တင်ပေးခြင်း
+        print("✅ Callee Local Description Set");
+
+        // 7. Upload Answer to Firestore
         await callRef.update({
-          'answer': {'type': answer.type, 'sdp': answer.sdp},
+          'answer': {
+            'type': answer.type,
+            'sdp': answer.sdp,
+          },
           'status': 'ongoing',
         });
-        print(
-            "✅ Callee generated and uploaded answer to Firestore successfully.");
 
-        // Caller Candidates များကို ထည့်သွင်းခြင်း
-        _candidateSub = callRef
-            .collection('callerCandidates')
-            .snapshots()
-            .listen((snapshot) {
-          for (var change in snapshot.docChanges) {
-            if (change.type == DocumentChangeType.added) {
-              var data = change.doc.data() as Map<String, dynamic>;
-              _peerConnection?.addCandidate(
-                RTCIceCandidate(
-                  data['candidate'],
-                  data['sdpMid'],
-                  data['sdpMLineIndex'],
-                ),
-              );
-            }
-          }
-        });
+        print(
+          "✅ Callee generated and uploaded answer successfully.",
+        );
       }
     } catch (e, stackTrace) {
       print("❌ WebRTC Setup Error: $e");
-      print("❌ Stack Trace: $stackTrace");
+      print(stackTrace);
     }
   }
 
@@ -310,11 +534,70 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
 
-  void _switchCamera() async {
-    if (_localStream != null) {
-      for (var track in _localStream!.getVideoTracks()) {
-        await Helper.switchCamera(track);
+  Future<void> _switchCamera() async {
+    if (_localStream == null || _peerConnection == null) return;
+
+    try {
+      final cameras = await Helper.cameras;
+
+      if (cameras.length <= 1) {
+        print("⚠️ Only one camera available.");
+        return;
       }
+
+      final videoTracks = _localStream!.getVideoTracks();
+
+      if (videoTracks.isEmpty) return;
+
+      final oldTrack = videoTracks.first;
+
+      // လက်ရှိ Video Sender ကို ရှာမယ်
+      RTCRtpSender? videoSender;
+
+      for (final sender in await _peerConnection!.getSenders()) {
+        if (sender.track?.kind == 'video') {
+          videoSender = sender;
+          break;
+        }
+      }
+
+      if (videoSender == null) {
+        print("❌ Video Sender not found!");
+        return;
+      }
+
+      // လက်ရှိ Camera ID
+      final currentDeviceId = oldTrack.getSettings()['deviceId'];
+
+      // နောက် Camera ကို ရွေးမယ်
+      final nextCamera = cameras.firstWhere(
+        (camera) => camera.deviceId != currentDeviceId,
+      );
+
+      print("🔄 Switching to: ${nextCamera.label}");
+
+      // Camera အသစ်ပြောင်းမယ်
+      await Helper.switchCamera(
+        oldTrack,
+        nextCamera.deviceId,
+        _localStream!,
+      );
+
+      // Stream ထဲက Camera Track အသစ်ယူမယ်
+      final newTrack = _localStream!.getVideoTracks().first;
+
+      // Peer Connection Sender ကို Track အသစ်ပြောင်းပေးမယ်
+      await videoSender.replaceTrack(newTrack);
+
+      _localRenderer.srcObject = _localStream;
+
+      if (mounted) {
+        setState(() {});
+      }
+
+      print("✅ Camera switched and Video Sender replaced!");
+    } catch (e) {
+      print("❌ Camera Switch Error: $e");
     }
   }
 

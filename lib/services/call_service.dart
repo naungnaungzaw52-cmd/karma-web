@@ -17,8 +17,8 @@ class CallService {
     try {
       RTCPeerConnection peerConnection = await createPeerConnection({
         'iceServers': [
-          {'urls': 'stun:stun.l.google.com:19302'}
-        ]
+          {'urls': 'stun:stun.l.google.com:19302'},
+        ],
       });
 
       RTCSessionDescription offer = await peerConnection.createOffer();

@@ -33,6 +33,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import 'package:karma/widgets/golden_name_widget.dart';
 import 'package:karma/utilis/theme_provider.dart';
+import 'package:karma/widgets/native_ad_widget.dart';
 
 class PostModel {
   final String id;
@@ -1133,13 +1134,24 @@ class HomePage extends StatelessWidget {
       await Future.delayed(const Duration(milliseconds: 800));
     }
 
+    final adCount = posts.length ~/ 3;
+    final totalItemCount = posts.length + adCount;
+
     return RefreshIndicator(
       onRefresh: handleRefresh,
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: posts.length,
+        itemCount: totalItemCount,
         itemBuilder: (context, index) {
-          var post = posts[index];
+          // 🌟 Post ၃ ခုတိုင်း Native Ad တစ်ခု ပြသမည်
+          if (index % 4 == 3) {
+            return const NativeAdWidget();
+          }
+
+          // 🌟 Ad ထည့်ထားသောကြောင့် မူရင်း Post Index ကို ပြန်တွက်မည်
+          final postIndex = index - (index ~/ 4);
+
+          var post = posts[postIndex];
           var postData = post.data() as Map<String, dynamic>;
           List likes = postData.containsKey('likes') ? postData['likes'] : [];
           String postUid = postData['uid'] ?? "";

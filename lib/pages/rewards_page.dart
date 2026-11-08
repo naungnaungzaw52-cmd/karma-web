@@ -1,181 +1,21 @@
-// ignore_for_file: avoid_print, use_build_context_synchronously
-
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:karma/main.dart';
 import 'package:provider/provider.dart';
+
+import 'package:karma/main.dart';
 import 'package:karma/utilis/theme_provider.dart';
 import 'package:karma/widgets/banner_ad_widget.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-// 🌟 AdMob Reward Helper Class (Daily Limit နှင့် Loading State ပါဝင်သည်)
-class AdMobRewardHelper {
-  RewardedAd? _rewardedAd;
-  bool _isLoaded = false;
-  final VoidCallback? onAdStateChanged;
-
-  AdMobRewardHelper({this.onAdStateChanged});
-
-  bool get isLoaded => _isLoaded;
-
-  // Rewarded Ad ကို Load လုပ်ရန်
-  void loadRewardedAd() {
-    _isLoaded = false;
-    onAdStateChanged?.call();
-
-    RewardedAd.load(
-      adUnitId:
-          'ca-app-pub-8755843731256088/9385854201', // Test Ad ID (production မှာ ကိုယ့် ID နဲ့လဲရန်)
-      request: const AdRequest(),
-      rewardedAdLoadCallback: RewardedAdLoadCallback(
-        onAdLoaded: (RewardedAd ad) {
-          _rewardedAd = ad;
-          _isLoaded = true;
-          onAdStateChanged
-              ?.call(); // Ad loaded ဖြစ်လာပါက UI ကို ချက်ချင်း update လုပ်ရန်
-        },
-        onAdFailedToLoad: (LoadAdError error) {
-          _rewardedAd = null;
-          _isLoaded = false;
-          onAdStateChanged?.call();
-        },
-      ),
-    );
-  }
-
-  // Ad ပြသရန်နှင့် Daily Limit စစ်ဆေးပြီး ဆုလာဘ် (Reward) ပေးရန်
-  void showRewardedAd(BuildContext context, double rewardAmount) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    final userRef =
-        FirebaseFirestore.instance.collection('users').doc(user.uid);
-
-    try {
-      // ၁။ Firestore ကနေ User ရဲ့ ယနေ့ ကြော်ငြာကြည့်ရှုမှု အချက်အလက်များကို ယူမည်
-      DocumentSnapshot userSnapshot = await userRef.get();
-      if (!userSnapshot.exists) return;
-
-      var userData = userSnapshot.data() as Map<String, dynamic>;
-
-      // ရက်စွဲအဟောင်းဖြစ်နေရင် (ရက်သစ်ပြောင်းသွားရင်) အရေအတွက်ကို 0 ပြန်စရန်
-      String todayStr = DateTime.now()
-          .toIso8601String()
-          .substring(0, 10); // ပုံစံ - YYYY-MM-DD
-      String lastWatchDate = userData['lastAdWatchDate'] ?? '';
-      int watchCount = userData['adWatchCount'] ?? 0;
-
-      if (lastWatchDate != todayStr) {
-        watchCount = 0; // ရက်သစ်ဖြစ်သွားပါက 0 ပြန်စမည်
-      }
-
-      // ၂။ Daily Limit (တစ်နေ့လျှင် အများဆုံး ၂၀ ကြိမ်) စစ်ဆေးခြင်း
-      if (watchCount >= 30) {
-        bool isMm = isMyanmarNotifier.value;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isMm
-                  ? "ယနေ့အတွက် ကြော်ငြာကြည့်ရှုနိုင်သည့် ကန့်သတ်ချက် (၃၀ ကြိမ်) ပြည့်သွားပါပြီ။ မနက်ဖြန်မှ ထပ်ကြိုးစားပေးပါ။"
-                  : "Daily ad viewing limit (30 times) reached for today. Please try again tomorrow.",
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      // ၃။ ကြော်ငြာ အသင့်ဖြစ်မဖြစ် စစ်ဆေးပြီး ပြသခြင်း
-      if (_isLoaded && _rewardedAd != null) {
-        _rewardedAd!.show(
-          onUserEarnedReward: (AdWithoutView ad, RewardItem reward) async {
-            // ကြော်ငြာအဆုံးထိ ကြည့်ပြီးပါက Balance တိုးမည် & Count တိုးမည်
-            await FirebaseFirestore.instance
-                .runTransaction((transaction) async {
-              DocumentSnapshot snapshot = await transaction.get(userRef);
-              if (snapshot.exists) {
-                var freshData = snapshot.data() as Map<String, dynamic>;
-                double currentBalance =
-                    (freshData['balance'] ?? 0.0).toDouble();
-
-                String dbLastDate = freshData['lastAdWatchDate'] ?? '';
-                int dbCount = (dbLastDate == todayStr)
-                    ? (freshData['adWatchCount'] ?? 0)
-                    : 0;
-                int updatedCount = dbCount + 1;
-
-                transaction.update(userRef, {
-                  'balance': currentBalance + rewardAmount,
-                  'adWatchCount': updatedCount,
-                  'lastAdWatchDate': todayStr,
-                });
-              }
-            });
-
-            bool isMm = isMyanmarNotifier.value;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  isMm
-                      ? "ဂုဏ်ယူပါတယ်! K-Points $rewardAmount ရရှိသွားပါပြီ။ (${watchCount + 1}/30)"
-                      : "Congratulations! You have received $rewardAmount K-Points. (${watchCount + 1}/30)",
-                ),
-              ),
-            );
-          },
-        );
-        _rewardedAd = null;
-        _isLoaded = false;
-        loadRewardedAd(); // နောက်တစ်ကြိမ်အတွက် ထပ် load ထားမည်
-      } else {
-        bool isMm = isMyanmarNotifier.value;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isMm
-                  ? "ကြော်ငြာ မရှိသေးပါ၊ ခဏစောင့်ပေးပါ။"
-                  : "No ads available yet, please wait a moment.",
-            ),
-          ),
-        );
-        loadRewardedAd();
-      }
-    } catch (e) {
-      print("Ad Error: $e");
-    }
-  }
-}
-
-class RewardsPage extends StatefulWidget {
+class RewardsPage extends StatelessWidget {
   const RewardsPage({super.key});
-
-  @override
-  State<RewardsPage> createState() => _RewardsPageState();
-}
-
-class _RewardsPageState extends State<RewardsPage> {
-  final User? user = FirebaseAuth.instance.currentUser;
-  late final AdMobRewardHelper _rewardHelper;
-
-  @override
-  void initState() {
-    super.initState();
-    // Ad State ပြောင်းလဲတိုင်း UI ချက်ချင်း Rebuild ဖြစ်စေရန် Callback ထည့်သွင်းခြင်း
-    _rewardHelper = AdMobRewardHelper(
-      onAdStateChanged: () {
-        if (mounted) setState(() {});
-      },
-    );
-    _rewardHelper.loadRewardedAd(); // Page စဖွင့်ချင်း Ad ကို load လုပ်ထားမည်
-  }
 
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-    bool isDark = (themeProvider.currentTheme != 'Default');
-    Color textColor = themeProvider.getTextColor();
-    Color cardColor = isDark ? Colors.grey[900]! : Colors.white;
+
+    final bool isDark = themeProvider.currentTheme != 'Default';
+    final Color textColor = themeProvider.getTextColor();
+
+    final Color cardColor = isDark ? Colors.grey.shade900 : Colors.white;
 
     return Container(
       decoration: themeProvider.getBackgroundDecoration(),
@@ -184,93 +24,118 @@ class _RewardsPageState extends State<RewardsPage> {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
+          iconTheme: IconThemeData(color: textColor),
           title: Text(
-            "Win-Win Ad Reward",
+            'Karma Rewards',
             style: TextStyle(
               color: textColor,
               fontWeight: FontWeight.bold,
               letterSpacing: 0.5,
             ),
           ),
-          iconTheme: IconThemeData(color: textColor),
         ),
-        body: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('users')
-              .doc(user?.uid)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
+        body: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
 
-            var userData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
-            double balance = (userData['balance'] ?? 0.0).toDouble();
+                    // 🌳 KARMA TREE
+                    _buildKarmaTree(),
 
-            return Column(
-              children: [
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.all(20),
-                    children: [
-                      // 🌟 Balance Card
-                      Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Colors.blueAccent, Colors.purpleAccent],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.blueAccent.withOpacity(0.3),
-                              blurRadius: 10,
-                              offset: const Offset(0, 5),
-                            ),
+                    const SizedBox(height: 25),
+
+                    // 🌟 COMING SOON
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 22,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFFFFB74D),
+                            Color(0xFFFF9800),
                           ],
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        borderRadius: BorderRadius.circular(30),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.orange.withOpacity(0.25),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Text(
+                        'COMING SOON',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // 🌍 TITLE
+                    ValueListenableBuilder<bool>(
+                      valueListenable: isMyanmarNotifier,
+                      builder: (context, isMm, child) {
+                        return Column(
                           children: [
-                            ValueListenableBuilder<bool>(
-                              valueListenable: isMyanmarNotifier,
-                              builder: (context, isMm, child) {
-                                return Text(
-                                  isMm
-                                      ? "လက်ရှိစုဆောင်းရရှိငွေ"
-                                      : "Current Balance",
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 8),
                             Text(
-                              "$balance K-Points",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 32,
+                              isMm
+                                  ? 'Karma Rewards မကြာမီလာပါတော့မယ်!'
+                                  : 'Karma Rewards is Coming!',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: textColor,
+                                fontSize: 23,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                            const SizedBox(height: 12),
+                            Text(
+                              isMm
+                                  ? 'သင့်ရဲ့ Karma ခရီးစဉ်မှာ ပါဝင်ရင်း '
+                                      'K-Points တွေ စုဆောင်းနိုင်မယ့် '
+                                      'အခွင့်အရေးအသစ်တွေ မကြာခင် ရောက်ရှိလာတော့မှာပါ။'
+                                  : 'A new way to collect K-Points and '
+                                      'enjoy exciting rewards is coming '
+                                      'soon to Karma.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: textColor.withOpacity(0.7),
+                                fontSize: 14,
+                                height: 1.7,
+                              ),
+                            ),
                           ],
-                        ),
-                      ),
-                      const SizedBox(height: 30),
+                        );
+                      },
+                    ),
 
-                      // 🌟 Watch Ad to Earn Section
-                      ValueListenableBuilder<bool>(
+                    const SizedBox(height: 30),
+
+                    // 🎁 UPCOMING BENEFITS
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: ValueListenableBuilder<bool>(
                         valueListenable: isMyanmarNotifier,
                         builder: (context, isMm, child) {
                           return Text(
                             isMm
-                                ? "ကြော်ငြာကြည့်ပြီး ငွေရှာရန်"
-                                : "Watch Ads to Earn",
+                                ? 'နောင်လာမယ့် အခွင့်အရေးများ'
+                                : 'What’s Coming Next',
                             style: TextStyle(
                               color: textColor,
                               fontSize: 18,
@@ -279,132 +144,425 @@ class _RewardsPageState extends State<RewardsPage> {
                           );
                         },
                       ),
-                      const SizedBox(height: 12),
+                    ),
 
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: cardColor.withOpacity(isDark ? 0.7 : 0.9),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: Colors.blueAccent.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.slow_motion_video,
-                                    color: Colors.blueAccent, size: 36),
-                                const SizedBox(width: 15),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      ValueListenableBuilder<bool>(
-                                        valueListenable: isMyanmarNotifier,
-                                        builder: (context, isMm, child) {
-                                          return Text(
-                                            isMm
-                                                ? "Rewarded Ad ကြည့်မည်"
-                                                : "Watch Rewarded Ad",
-                                            style: TextStyle(
-                                              color: textColor,
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                      const SizedBox(height: 4),
-                                      ValueListenableBuilder<bool>(
-                                        valueListenable: isMyanmarNotifier,
-                                        builder: (context, isMm, child) {
-                                          return Text(
-                                            isMm
-                                                ? "ဗီဒီယိုကြော်ငြာ တစ်ခုကြည့်ရုံဖြင့် K-Points 20 ရယူပါ။ (တစ်နေ့ ၃၀ ကြိမ်)"
-                                                : "Watch a video ad to earn 20 K-Points. (30 times daily)",
-                                            style: TextStyle(
-                                              color: textColor.withOpacity(0.6),
-                                              fontSize: 12,
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 48,
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  // Ad မလာသေးရင် မီးခိုးရောင်၊ လာပြီးရင် အပြာရောင်ပြမည်
-                                  backgroundColor: _rewardHelper.isLoaded
-                                      ? Colors.blueAccent
-                                      : Colors.grey,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                // Ad မလာသေးရင် နှိပ်၍မရအောင် ပိတ်ထားမည် (onPressed: null)
-                                onPressed: _rewardHelper.isLoaded
-                                    ? () {
-                                        _rewardHelper.showRewardedAd(
-                                            context, 20.0);
-                                      }
-                                    : null,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    if (!_rewardHelper.isLoaded) ...[
-                                      const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          color: Colors.white,
-                                          strokeWidth: 2,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                    ],
-                                    ValueListenableBuilder<bool>(
-                                      valueListenable: isMyanmarNotifier,
-                                      builder: (context, isMm, child) {
-                                        return Text(
-                                          _rewardHelper.isLoaded
-                                              ? (isMm
-                                                  ? "ကြော်ငြာစတင်ကြည့်မည်"
-                                                  : "Watch Ad")
-                                              : (isMm
-                                                  ? "ကြော်ငြာ ဆွဲနေသည် ခဏစောင့်ပါ..."
-                                                  : "Loading Ad, please wait..."),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 15,
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
+                    const SizedBox(height: 15),
+
+                    _buildFeatureCard(
+                      context: context,
+                      cardColor: cardColor,
+                      textColor: textColor,
+                      icon: Icons.monetization_on_rounded,
+                      iconColor: Colors.amber,
+                      mmTitle: 'K-Points စုဆောင်းခြင်း',
+                      enTitle: 'Collect K-Points',
+                      mmDescription:
+                          'Activity များမှတစ်ဆင့် K-Points များ စုဆောင်းနိုင်မည်။',
+                      enDescription:
+                          'Collect K-Points through activities on Karma.',
+                    ),
+
+                    _buildFeatureCard(
+                      context: context,
+                      cardColor: cardColor,
+                      textColor: textColor,
+                      icon: Icons.card_giftcard_rounded,
+                      iconColor: Colors.pinkAccent,
+                      mmTitle: 'အထူးလက်ဆောင်များ',
+                      enTitle: 'Special Gifts',
+                      mmDescription:
+                          'စုဆောင်းထားသော Points များဖြင့် လက်ဆောင်များ ရယူနိုင်မည်။',
+                      enDescription:
+                          'Unlock exciting gifts with your collected points.',
+                    ),
+
+                    _buildFeatureCard(
+                      context: context,
+                      cardColor: cardColor,
+                      textColor: textColor,
+                      icon: Icons.workspace_premium_rounded,
+                      iconColor: Colors.orange,
+                      mmTitle: 'အထူးအခွင့်အရေးများ',
+                      enTitle: 'Special Benefits',
+                      mmDescription:
+                          'Karma အသုံးပြုသူများအတွက် အကျိုးခံစားခွင့်အသစ်များ။',
+                      enDescription:
+                          'Enjoy exclusive benefits and new opportunities.',
+                    ),
+
+                    const SizedBox(height: 25),
+
+                    // 💚 FOOTER MESSAGE
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.green.withOpacity(0.2),
                         ),
                       ),
-                    ],
-                  ),
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: isMyanmarNotifier,
+                        builder: (context, isMm, child) {
+                          return Column(
+                            children: [
+                              const Icon(
+                                Icons.eco_rounded,
+                                color: Colors.green,
+                                size: 30,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                isMm
+                                    ? 'အတူတကွ ဖန်တီးပါ။ အတူတကွ တိုးတက်ပါ။'
+                                    : 'Grow Together. Benefit Together.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: textColor,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                isMm
+                                    ? 'Karma နဲ့အတူ အနာဂတ်အခွင့်အရေးသစ်တွေကို '
+                                        'စောင့်မျှော်လိုက်ပါ။'
+                                    : 'Stay connected with Karma for '
+                                        'exciting upcoming rewards.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: textColor.withOpacity(0.65),
+                                  fontSize: 12,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+                  ],
                 ),
-                const BannerAdWidget(),
-              ],
-            );
-          },
+              ),
+            ),
+
+            // 📢 BANNER AD
+            const BannerAdWidget(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 🌳 KARMA TREE ILLUSTRATION
+  Widget _buildKarmaTree() {
+    return Container(
+      width: double.infinity,
+      height: 280,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.green.withOpacity(0.08),
+            Colors.teal.withOpacity(0.03),
+          ],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+        borderRadius: BorderRadius.circular(25),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // 🌟 Background circles
+          Positioned(
+            top: 25,
+            left: 35,
+            child: _buildDecorationCircle(12),
+          ),
+
+          Positioned(
+            top: 55,
+            right: 40,
+            child: _buildDecorationCircle(8),
+          ),
+
+          Positioned(
+            bottom: 55,
+            left: 65,
+            child: _buildDecorationCircle(9),
+          ),
+
+          // 🌳 Tree leaves
+          Positioned(
+            top: 35,
+            child: Container(
+              width: 165,
+              height: 165,
+              decoration: BoxDecoration(
+                color: Colors.green.shade600,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.green.withOpacity(0.2),
+                    blurRadius: 20,
+                    spreadRadius: 4,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          Positioned(
+            top: 75,
+            left: 85,
+            child: _leaf(65, Colors.green.shade400),
+          ),
+
+          Positioned(
+            top: 80,
+            right: 85,
+            child: _leaf(65, Colors.green.shade700),
+          ),
+
+          Positioned(
+            top: 25,
+            child: _leaf(75, Colors.lightGreen.shade400),
+          ),
+
+          // 🌲 Tree trunk
+          Positioned(
+            bottom: 35,
+            child: Container(
+              width: 38,
+              height: 95,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.brown.shade400,
+                    Colors.brown.shade800,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+
+          // 🪙 K Coins
+          const Positioned(
+            top: 65,
+            left: 75,
+            child: _KCoin(size: 42),
+          ),
+
+          const Positioned(
+            top: 105,
+            right: 75,
+            child: _KCoin(size: 38),
+          ),
+
+          const Positioned(
+            top: 15,
+            child: _KCoin(size: 45),
+          ),
+
+          const Positioned(
+            top: 145,
+            left: 115,
+            child: _KCoin(size: 35),
+          ),
+
+          const Positioned(
+            top: 145,
+            right: 115,
+            child: _KCoin(size: 35),
+          ),
+
+          // 🌱 Ground
+          Positioned(
+            bottom: 25,
+            child: Container(
+              width: 190,
+              height: 15,
+              decoration: BoxDecoration(
+                color: Colors.green.shade300,
+                borderRadius: BorderRadius.circular(50),
+              ),
+            ),
+          ),
+
+          // ✨ Small stars
+          const Positioned(
+            top: 45,
+            left: 45,
+            child: Icon(
+              Icons.star,
+              color: Colors.amber,
+              size: 18,
+            ),
+          ),
+
+          const Positioned(
+            top: 100,
+            right: 35,
+            child: Icon(
+              Icons.auto_awesome,
+              color: Colors.orangeAccent,
+              size: 20,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _leaf(double size, Color color) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+
+  Widget _buildDecorationCircle(double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        color: Colors.amber,
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+
+  // 🎁 FEATURE CARD
+  Widget _buildFeatureCard({
+    required BuildContext context,
+    required Color cardColor,
+    required Color textColor,
+    required IconData icon,
+    required Color iconColor,
+    required String mmTitle,
+    required String enTitle,
+    required String mmDescription,
+    required String enDescription,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardColor.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: iconColor.withOpacity(0.2),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              icon,
+              color: iconColor,
+              size: 27,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: ValueListenableBuilder<bool>(
+              valueListenable: isMyanmarNotifier,
+              builder: (context, isMm, child) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isMm ? mmTitle : enTitle,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      isMm ? mmDescription : enDescription,
+                      style: TextStyle(
+                        color: textColor.withOpacity(0.65),
+                        fontSize: 12,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          Icon(
+            Icons.lock_clock_rounded,
+            color: textColor.withOpacity(0.35),
+            size: 20,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// 🪙 K-POINT COIN
+class _KCoin extends StatelessWidget {
+  final double size;
+
+  const _KCoin({
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFFFFE082),
+            Color(0xFFFFB300),
+            Color(0xFFFF8F00),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: const Color(0xFFFFF3CD),
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.35),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Text(
+        'K',
+        style: TextStyle(
+          color: Colors.brown.shade800,
+          fontSize: size * 0.48,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
